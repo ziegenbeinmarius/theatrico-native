@@ -44,6 +44,7 @@ export interface Session {
   playId: string;
   status: SessionStatus;
   currentPosition: Position | null;
+  play?: Play;
 }
 
 // WebSocket message types

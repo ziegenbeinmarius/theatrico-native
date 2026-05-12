@@ -1,13 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import {
+  AudioModule,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  type AudioRecorder,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { theatricoClient } from '@/services/api/theatricoClient';
 import { createSessionWebSocket } from '@/services/api/websocket/SessionWebSocket';
 import { createAudioWebSocket } from '@/services/api/websocket/AudioWebSocket';
 import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
-import type { IAudioWebSocket, ISessionWebSocket, Play, Position, Session, SessionMessage, SessionStatus } from '@/domain';
+import type {
+  IAudioWebSocket,
+  ISessionWebSocket,
+  Play,
+  Position,
+  Session,
+  SessionMessage,
+  SessionStatus,
+} from '@/domain';
 import { flattenLines, findLineIndex } from '@/lib/scriptUtils';
+import { matchTranscriptToScript, buildContextHint } from '@/lib/scriptMatcher';
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
@@ -48,20 +63,18 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 export function useOperatorSession(sessionCode: string): UseOperatorSessionResult {
   const { recognizer } = useSpeechRecognizerContext();
 
-  const { data: session, isLoading: sessionLoading, error: sessionError } = useQuery({
+  const {
+    data: session,
+    isLoading: sessionLoading,
+    error: sessionError,
+  } = useQuery({
     queryKey: ['sessions', sessionCode],
     queryFn: () => theatricoClient.getSession(sessionCode),
     enabled: Boolean(sessionCode),
   });
 
-  const { data: plays, isLoading: playsLoading } = useQuery({
-    queryKey: ['plays'],
-    queryFn: () => theatricoClient.listPlays(),
-    enabled: Boolean(session),
-  });
-
-  const play = plays?.find((p) => p.id === session?.playId) ?? null;
-  const isLoading = sessionLoading || playsLoading;
+  const play = session?.play ?? null;
+  const isLoading = sessionLoading;
   const error = sessionError instanceof Error ? sessionError : null;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -77,10 +90,21 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
   const sessionWsRef = useRef<ISessionWebSocket | null>(null);
   const audioWsRef = useRef<IAudioWebSocket | null>(null);
-  const audioRecordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecordingRef = useRef<AudioRecorder | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const transcriptCounterRef = useRef(0);
+
+  // Refs so the recognizer callback always sees the latest play/position without stale closure
+  const flatLinesRef = useRef<ReturnType<typeof flattenLines>>([]);
+  const currentPositionRef = useRef<typeof currentPosition>(currentPosition);
+  const sessionCodeRef = useRef(sessionCode);
+
+  useEffect(() => { currentPositionRef.current = currentPosition; }, [currentPosition]);
+  useEffect(() => { sessionCodeRef.current = sessionCode; }, [sessionCode]);
+  useEffect(() => {
+    flatLinesRef.current = play ? flattenLines(play) : [];
+  }, [play]);
 
   useEffect(() => {
     if (!sessionCode) return;
@@ -104,7 +128,10 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
         setTranscriptItems((prev) => {
           const lastItem = prev[prev.length - 1];
           if (!msg.isFinal && lastItem && !lastItem.isFinal) {
-            return [...prev.slice(0, -1), { id, text: msg.text, isFinal: false, timestamp: Date.now() }];
+            return [
+              ...prev.slice(0, -1),
+              { id, text: msg.text, isFinal: false, timestamp: Date.now() },
+            ];
           }
           return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
         });
@@ -138,10 +165,29 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       setTranscriptItems((prev) => {
         const lastItem = prev[prev.length - 1];
         if (!result.isFinal && lastItem && !lastItem.isFinal) {
-          return [...prev.slice(0, -1), { id, text: result.text, isFinal: false, timestamp: Date.now() }];
+          return [
+            ...prev.slice(0, -1),
+            { id, text: result.text, isFinal: false, timestamp: Date.now() },
+          ];
         }
         return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
       });
+
+      if (result.isFinal) {
+        const lines = flatLinesRef.current;
+        const pos = currentPositionRef.current;
+        const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
+        const matchIdx = matchTranscriptToScript(result.text, lines, currentIdx);
+        if (matchIdx >= 0) {
+          const matched = lines[matchIdx];
+          if (matched) {
+            setCurrentPosition(matched.position);
+            theatricoClient
+              .updatePosition(sessionCodeRef.current, matched.position)
+              .catch(() => {});
+          }
+        }
+      }
     });
     return unsub;
   }, [recognizer]);
@@ -149,16 +195,17 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const captureChunk = useCallback(async () => {
     if (!isRecordingRef.current) return;
     try {
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
+      // eslint-disable-next-line import/namespace
+      const recording = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      await recording.prepareToRecordAsync();
+      recording.record();
       audioRecordingRef.current = recording;
 
       chunkTimerRef.current = setTimeout(async () => {
         chunkTimerRef.current = null;
         try {
-          await recording.stopAndUnloadAsync();
-          const uri = recording.getURI();
+          await recording.stop();
+          const uri = recording.uri;
           if (uri && isRecordingRef.current) {
             const b64 = await FileSystem.readAsStringAsync(uri, {
               encoding: FileSystem.EncodingType.Base64,
@@ -180,15 +227,20 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   }, []);
 
   const startRecording = useCallback(async () => {
-    const { granted } = await Audio.requestPermissionsAsync();
+    const { granted } = await requestRecordingPermissionsAsync();
     if (!granted) throw new Error('Microphone permission denied');
 
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
     });
 
-    await recognizer.start({ language: 'en-US' });
+    const lines = flatLinesRef.current;
+    const pos = currentPositionRef.current;
+    const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
+    const contextHint = buildContextHint(lines, currentIdx);
+
+    await recognizer.start({ language: 'en', contextHint });
     isRecordingRef.current = true;
     setIsRecording(true);
     void captureChunk();
@@ -205,7 +257,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
     try {
       if (audioRecordingRef.current) {
-        await audioRecordingRef.current.stopAndUnloadAsync();
+        await audioRecordingRef.current.stop();
         audioRecordingRef.current = null;
       }
     } catch {}
@@ -228,8 +280,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     if (idx <= 0) return;
     const prevLine = lines[idx - 1];
     if (!prevLine) return;
-    await theatricoClient.updatePosition(sessionCode, prevLine.position);
     setCurrentPosition(prevLine.position);
+    theatricoClient.updatePosition(sessionCode, prevLine.position).catch(() => {});
   }, [play, currentPosition, sessionCode]);
 
   const moveNext = useCallback(async () => {
@@ -239,8 +291,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     if (idx < 0 || idx >= lines.length - 1) return;
     const nextLine = lines[idx + 1];
     if (!nextLine) return;
-    await theatricoClient.updatePosition(sessionCode, nextLine.position);
     setCurrentPosition(nextLine.position);
+    theatricoClient.updatePosition(sessionCode, nextLine.position).catch(() => {});
   }, [play, currentPosition, sessionCode]);
 
   return {

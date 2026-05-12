@@ -52,9 +52,7 @@ export default function JoinScreen() {
               className={`flex-1 py-3 items-center ${tab === t ? 'bg-app-accent' : ''}`}
               onPress={() => void handleTabChange(t)}
             >
-              <Text
-                className={`text-sm font-bold ${tab === t ? 'text-white' : 'text-app-muted'}`}
-              >
+              <Text className={`text-sm font-bold ${tab === t ? 'text-white' : 'text-app-muted'}`}>
                 {t === 'code' ? 'Enter Code' : 'Scan QR'}
               </Text>
             </Pressable>

@@ -44,12 +44,24 @@ export class SessionWebSocket implements ISessionWebSocket {
     this.handlers.delete(handler);
   }
 
-  onOpen(handler: () => void): void { this.openHandlers.add(handler); }
-  offOpen(handler: () => void): void { this.openHandlers.delete(handler); }
-  onClose(handler: () => void): void { this.closeHandlers.add(handler); }
-  offClose(handler: () => void): void { this.closeHandlers.delete(handler); }
-  onGiveUp(handler: () => void): void { this.giveUpHandlers.add(handler); }
-  offGiveUp(handler: () => void): void { this.giveUpHandlers.delete(handler); }
+  onOpen(handler: () => void): void {
+    this.openHandlers.add(handler);
+  }
+  offOpen(handler: () => void): void {
+    this.openHandlers.delete(handler);
+  }
+  onClose(handler: () => void): void {
+    this.closeHandlers.add(handler);
+  }
+  offClose(handler: () => void): void {
+    this.closeHandlers.delete(handler);
+  }
+  onGiveUp(handler: () => void): void {
+    this.giveUpHandlers.add(handler);
+  }
+  offGiveUp(handler: () => void): void {
+    this.giveUpHandlers.delete(handler);
+  }
 
   private openSocket(): void {
     const ws = new WebSocket(this.url);
@@ -109,8 +121,7 @@ export function createSessionWebSocket(sessionCode: string): ISessionWebSocket {
 }
 
 export const defaultSessionWebSocket = {
-  forSession: (code: string) =>
-    new SessionWebSocket(code),
+  forSession: (code: string) => new SessionWebSocket(code),
 };
 
 // Convenience factory wired to the default backend

@@ -36,7 +36,7 @@ export function ScriptPositionCard({ play, position }: Props) {
       {/* Act / Scene breadcrumb */}
       <View style={styles.divider}>
         <Text className="text-[11px] text-app-tertiary uppercase tracking-[1px]">
-          {current.actTitle}  ·  {current.sceneTitle}
+          {current.actTitle} · {current.sceneTitle}
         </Text>
       </View>
 

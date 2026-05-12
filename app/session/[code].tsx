@@ -14,9 +14,7 @@ function ConnectionBadge({ status }: { status: WsStatus }) {
   const cfg = configs[status];
   return (
     <View className={`px-3 py-1 rounded-full ${cfg.className}`}>
-      <Text className="text-white text-[11px] font-bold uppercase tracking-[1px]">
-        {cfg.label}
-      </Text>
+      <Text className="text-white text-[11px] font-bold uppercase tracking-[1px]">{cfg.label}</Text>
     </View>
   );
 }
@@ -55,9 +53,7 @@ export default function AudienceScreen() {
           </View>
         ) : !play ? (
           <View className="flex-1 items-center justify-center px-6">
-            <Text className="text-sm text-app-muted text-center">
-              Waiting for session data…
-            </Text>
+            <Text className="text-sm text-app-muted text-center">Waiting for session data…</Text>
           </View>
         ) : !currentPosition ? (
           <View className="flex-1 items-center justify-center px-6">

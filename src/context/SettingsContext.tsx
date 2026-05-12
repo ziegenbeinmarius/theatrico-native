@@ -53,8 +53,8 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  backendUrl: 'http://localhost:8080',
-  recognizerPreference: 'native',
+  backendUrl: 'https://theatrico.fly.dev',
+  recognizerPreference: 'whisper',
   whisperModelSize: 'base',
   language: 'en',
 };

@@ -15,9 +15,12 @@ const IPAD_BREAKPOINT = 768;
 function ReconnectOverlay({ status }: { status: WsStatus }) {
   if (status !== 'reconnecting') return null;
   return (
-    <View className="absolute inset-0 bg-black/50 items-center justify-center z-10 gap-3">
+    <View
+      pointerEvents="none"
+      className="absolute inset-0 z-10 items-center justify-center gap-3 bg-black/50"
+    >
       <ActivityIndicator color="#e94560" size="large" />
-      <Text className="text-app-text text-base font-semibold">Reconnecting…</Text>
+      <Text className="text-base font-semibold text-app-text">Reconnecting…</Text>
     </View>
   );
 }
@@ -37,7 +40,7 @@ function StatusBanner({
         <Text className="text-[#ff6666] text-[13px] font-semibold flex-1">
           Cannot reach backend — check your URL in Settings
         </Text>
-        <Pressable onPress={onRetry} className="ml-2 bg-app-accent rounded-lg px-3 py-1">
+        <Pressable onPress={onRetry} className="px-3 py-1 ml-2 rounded-lg bg-app-accent">
           <Text className="text-white text-[12px] font-bold">Retry</Text>
         </Pressable>
       </View>
@@ -63,7 +66,7 @@ function useWhisperModelCheck(modelSize: string) {
     if (!info) return;
     const fileName = info.url.split('/').pop() ?? 'whisper-model.bin';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const FileSystem = require('expo-file-system') as {
+    const FileSystem = require('expo-file-system/legacy') as {
       cacheDirectory: string;
       getInfoAsync: (p: string) => Promise<{ exists: boolean }>;
     };
@@ -124,7 +127,10 @@ export default function OperatorScreen() {
         await startRecording();
       }
     } catch (e) {
-      Alert.alert('Microphone Error', e instanceof Error ? e.message : 'Failed to access microphone');
+      Alert.alert(
+        'Microphone Error',
+        e instanceof Error ? e.message : 'Failed to access microphone',
+      );
     }
   };
 
@@ -162,7 +168,7 @@ export default function OperatorScreen() {
         </Text>
         <RecognizerToggle
           value={recognizer.type}
-          onChange={(type) => void switchRecognizer(type)}
+          onChange={(type) => switchRecognizer(type)}
           disabled={isRecording}
         />
       </View>
@@ -181,19 +187,15 @@ export default function OperatorScreen() {
           className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
           onPress={handleMovePrev}
         >
-          <Text className="text-app-label text-sm font-semibold">← Prev</Text>
+          <Text className="text-sm font-semibold text-app-label">← Prev</Text>
         </Pressable>
         <Pressable
           className={`flex-[1.4] rounded-[10px] py-3 items-center border ${
-            isPaused
-              ? 'bg-[#1a0a20] border-app-accent'
-              : 'bg-app-card border-transparent'
+            isPaused ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-transparent'
           }`}
           onPress={handleTogglePause}
         >
-          <Text
-            className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}
-          >
+          <Text className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}>
             {isPaused ? '▶ Resume' : '⏸ Pause'}
           </Text>
         </Pressable>
@@ -201,7 +203,7 @@ export default function OperatorScreen() {
           className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
           onPress={handleMoveNext}
         >
-          <Text className="text-app-label text-sm font-semibold">Next →</Text>
+          <Text className="text-sm font-semibold text-app-label">Next →</Text>
         </Pressable>
       </View>
     </View>
@@ -213,7 +215,7 @@ export default function OperatorScreen() {
       <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
         TRANSCRIPT
       </Text>
-      <View className="flex-1 bg-app-card rounded-xl overflow-hidden">
+      <View className="flex-1 overflow-hidden bg-app-card rounded-xl">
         <TranscriptLog items={transcriptItems} />
       </View>
     </View>
@@ -223,14 +225,12 @@ export default function OperatorScreen() {
   const MicButton = (
     <Pressable
       className={`flex-row rounded-[14px] py-[14px] items-center justify-center gap-2 border-2 ${
-        isRecording
-          ? 'bg-[#1a0a20] border-app-accent'
-          : 'bg-app-card border-[#2a2a5a]'
+        isRecording ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-[#2a2a5a]'
       }`}
       onPress={handleMicPress}
     >
       <Text className="text-xl">{isRecording ? '⏹' : '🎙'}</Text>
-      <Text className="text-app-text text-base font-bold">
+      <Text className="text-base font-bold text-app-text">
         {isRecording ? 'Stop Mic' : 'Start Mic'}
       </Text>
     </Pressable>
@@ -243,10 +243,7 @@ export default function OperatorScreen() {
           title: 'Operator',
           headerShown: true,
           headerRight: () => (
-            <Pressable
-              onPress={() => router.push('/settings')}
-              className="mr-1 px-2 py-1"
-            >
+            <Pressable onPress={() => router.push('/settings')} className="px-2 py-1 mr-1">
               <Text className="text-white text-[22px]">⚙</Text>
             </Pressable>
           ),
@@ -254,7 +251,7 @@ export default function OperatorScreen() {
       />
 
       <View
-        className="flex-1 bg-app-dark px-4 pt-3 gap-3"
+        className="flex-1 gap-3 px-4 pt-3 bg-app-dark"
         style={{ paddingBottom: insets.bottom + 12 }}
       >
         {/* Reconnect overlay (blocks interaction while reconnecting) */}
@@ -268,13 +265,13 @@ export default function OperatorScreen() {
         />
 
         {isLoading ? (
-          <View className="flex-1 items-center justify-center gap-2">
+          <View className="items-center justify-center flex-1 gap-2">
             <ActivityIndicator color="#e94560" size="large" />
-            <Text className="text-app-muted text-sm">Loading session…</Text>
+            <Text className="text-sm text-app-muted">Loading session…</Text>
           </View>
         ) : error && !session ? (
-          <View className="flex-1 items-center justify-center gap-2">
-            <Text className="text-app-accent text-base font-bold">Failed to load session</Text>
+          <View className="items-center justify-center flex-1 gap-2">
+            <Text className="text-base font-bold text-app-accent">Failed to load session</Text>
             <Text className="text-app-muted text-[13px]">{error.message}</Text>
           </View>
         ) : (
@@ -291,16 +288,14 @@ export default function OperatorScreen() {
 
             {/* iPad two-column layout */}
             {isIPad ? (
-              <View className="flex-1 flex-row gap-4">
+              <View className="flex-row flex-1 gap-4">
                 {/* Left: Transcript + Mic */}
                 <View className="flex-1 gap-3">
                   {TranscriptPanel}
                   {MicButton}
                 </View>
                 {/* Right: Controls */}
-                <View className="w-[340px] gap-3">
-                  {ControlsPanel}
-                </View>
+                <View className="w-[340px] gap-3">{ControlsPanel}</View>
               </View>
             ) : (
               <>
