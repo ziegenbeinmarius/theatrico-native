@@ -1,5 +1,5 @@
 import { config } from '@/lib/config';
-import type { ITheatricoClient, Play, Session } from '@/domain';
+import type { ITheatricoClient, Play, Position, Session, SessionStatus } from '@/domain';
 
 class TheatricoClient implements ITheatricoClient {
   private readonly base: string;
@@ -32,6 +32,20 @@ class TheatricoClient implements ITheatricoClient {
 
   getSession(code: string): Promise<Session> {
     return this.request<Session>(`/api/sessions/${encodeURIComponent(code)}`);
+  }
+
+  updatePosition(code: string, position: Position): Promise<void> {
+    return this.request<void>(`/api/sessions/${encodeURIComponent(code)}/position`, {
+      method: 'PATCH',
+      body: JSON.stringify(position),
+    });
+  }
+
+  updateStatus(code: string, status: SessionStatus): Promise<void> {
+    return this.request<void>(`/api/sessions/${encodeURIComponent(code)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
   }
 }
 

@@ -74,6 +74,8 @@ export interface ITheatricoClient {
   listPlays(): Promise<Play[]>;
   createSession(playId: string): Promise<Session>;
   getSession(code: string): Promise<Session>;
+  updatePosition(code: string, position: Position): Promise<void>;
+  updateStatus(code: string, status: SessionStatus): Promise<void>;
 }
 
 export interface ISessionWebSocket {
