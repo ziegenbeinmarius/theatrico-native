@@ -5,6 +5,7 @@ import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { RecognizerToggle } from '@/components/RecognizerToggle';
 import { TranscriptLog } from '@/components/TranscriptLog';
 import { ScriptPositionCard } from '@/components/ScriptPositionCard';
+import { WhisperModelPicker } from '@/components/WhisperModelPicker';
 import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
 
 export default function OperatorScreen() {
@@ -118,6 +119,16 @@ export default function OperatorScreen() {
                 disabled={isRecording}
               />
             </View>
+
+            {/* Whisper model picker */}
+            {recognizer.type === 'whisper' && (
+              <View className="gap-1.5">
+                <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
+                  WHISPER MODEL
+                </Text>
+                <WhisperModelPicker disabled={isRecording} />
+              </View>
+            )}
 
             {/* Script position */}
             <View className="gap-1.5">
