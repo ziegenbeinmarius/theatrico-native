@@ -42,6 +42,7 @@ export const SUPPORTED_LANGUAGES: { code: string; label: string }[] = [
   { code: 'zh', label: 'Chinese' },
   { code: 'ko', label: 'Korean' },
   { code: 'ru', label: 'Russian' },
+  { code: 'sv', label: 'Swedish' },
 ];
 
 export interface Settings {
