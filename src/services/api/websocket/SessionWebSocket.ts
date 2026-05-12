@@ -9,6 +9,9 @@ export class SessionWebSocket implements ISessionWebSocket {
   private readonly url: string;
   private ws: WebSocket | null = null;
   private handlers = new Set<(msg: SessionMessage) => void>();
+  private openHandlers = new Set<() => void>();
+  private closeHandlers = new Set<() => void>();
+  private giveUpHandlers = new Set<() => void>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = false;
@@ -41,11 +44,19 @@ export class SessionWebSocket implements ISessionWebSocket {
     this.handlers.delete(handler);
   }
 
+  onOpen(handler: () => void): void { this.openHandlers.add(handler); }
+  offOpen(handler: () => void): void { this.openHandlers.delete(handler); }
+  onClose(handler: () => void): void { this.closeHandlers.add(handler); }
+  offClose(handler: () => void): void { this.closeHandlers.delete(handler); }
+  onGiveUp(handler: () => void): void { this.giveUpHandlers.add(handler); }
+  offGiveUp(handler: () => void): void { this.giveUpHandlers.delete(handler); }
+
   private openSocket(): void {
     const ws = new WebSocket(this.url);
 
     ws.onopen = () => {
       this.reconnectAttempts = 0;
+      this.openHandlers.forEach((h) => h());
     };
 
     ws.onmessage = (event) => {
@@ -60,6 +71,7 @@ export class SessionWebSocket implements ISessionWebSocket {
     ws.onclose = () => {
       this.ws = null;
       if (this.shouldReconnect) {
+        this.closeHandlers.forEach((h) => h());
         this.scheduleReconnect();
       }
     };
@@ -72,7 +84,10 @@ export class SessionWebSocket implements ISessionWebSocket {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.giveUpHandlers.forEach((h) => h());
+      return;
+    }
 
     const delay = Math.min(
       BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts),

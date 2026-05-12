@@ -5,7 +5,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: 'Theatrico',
   slug: 'theatrico-native',
   version: '1.0.0',
-  orientation: 'portrait',
+  orientation: 'default',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
@@ -30,7 +30,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     output: 'static',
     favicon: './assets/favicon.png',
   },
-  plugins: ['expo-router', 'expo-splash-screen'],
+  plugins: [
+    'expo-router',
+    'expo-splash-screen',
+    [
+      'expo-camera',
+      { cameraPermission: 'Allow Theatrico to access your camera to scan session QR codes.' },
+    ],
+  ],
   experiments: {
     typedRoutes: true,
   },

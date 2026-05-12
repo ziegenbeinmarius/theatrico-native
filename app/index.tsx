@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlays } from '@/hooks/usePlays';
@@ -15,8 +15,6 @@ export default function HomeScreen() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [joinCode, setJoinCode] = useState('');
-
   const handleCreateSession = async () => {
     if (!selectedPlay) return;
     setCreating(true);
@@ -28,12 +26,6 @@ export default function HomeScreen() {
       setCreateError(e instanceof Error ? e.message : 'Failed to create session');
     } finally {
       setCreating(false);
-    }
-  };
-
-  const handleJoin = () => {
-    if (joinCode.trim()) {
-      router.push(`/session/${joinCode.trim().toUpperCase()}`);
     }
   };
 
@@ -125,27 +117,13 @@ export default function HomeScreen() {
           Audience
         </Text>
         <Text className="text-[13px] text-app-tertiary -mt-1.5">
-          Enter the session code shown by the operator
+          Enter a session code or scan the QR code from the operator screen
         </Text>
-
-        <TextInput
-          className="bg-app-input rounded-xl px-4 py-[13px] text-lg text-white tracking-[3px] text-center"
-          value={joinCode}
-          onChangeText={setJoinCode}
-          placeholder="e.g. ABC123"
-          placeholderTextColor="#555577"
-          autoCapitalize="characters"
-          returnKeyType="join"
-          onSubmitEditing={handleJoin}
-        />
         <Pressable
-          className={`bg-app-input rounded-xl py-[14px] items-center ${
-            !joinCode.trim() ? 'opacity-40' : ''
-          }`}
-          onPress={handleJoin}
-          disabled={!joinCode.trim()}
+          className="bg-app-accent rounded-xl py-[14px] items-center"
+          onPress={() => router.push('/join')}
         >
-          <Text className="text-white text-[15px] font-bold">Join Session</Text>
+          <Text className="text-white text-[15px] font-bold">Join as Audience →</Text>
         </Pressable>
       </View>
     </ScrollView>
