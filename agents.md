@@ -385,6 +385,91 @@ QueryClientProvider
 
 Both are implemented in `theatricoClient.ts` as `updateStatus()` and `updatePosition()`, and declared on `ITheatricoClient` in `src/domain/index.ts`.
 
+## Audience Screen (Sprint 5)
+
+### Overview
+
+The audience flow lets a viewer join a session by entering a code or scanning the operator's QR code, then follow the script in real time as the operator advances the cursor.
+
+**Route map**:
+- `app/index.tsx` → "Join as Audience →" → `app/join.tsx`
+- `app/join.tsx` → "Join as Audience" / QR scan → `app/session/[code].tsx`
+
+### Data Flow
+
+```
+SessionWebSocket  ◄──────────────  backend /api/sessions/:code/ws
+        │ position_update
+        ▼
+useAudienceSession.currentPosition  ──►  ScriptView (FlatList auto-scroll)
+```
+
+### useAudienceSession (`src/hooks/useAudienceSession.ts`)
+
+Accepts a `sessionCode` string and returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session` | `Session \| undefined` | Fetched via React Query |
+| `play` | `Play \| null` | Play data for the session's playId |
+| `flatLines` | `FlatLine[]` | Pre-flattened lines array (passed to ScriptView) |
+| `isLoading` | `boolean` | True while session/play queries are pending |
+| `currentPosition` | `Position \| null` | Current script cursor (updated by WebSocket) |
+| `wsStatus` | `WsStatus` | `'connecting' \| 'connected' \| 'reconnecting' \| 'disconnected'` |
+| `error` | `Error \| null` | Session load error |
+
+**WebSocket lifecycle**: Creates a `SessionWebSocket` directly (not via `ISessionWebSocket`) to access `onOpen`, `onClose`, and `onGiveUp` status callbacks added in Sprint 5. Status transitions: `connecting` → `connected` (on `onOpen`) → `reconnecting` (on `onClose`) → `connected` (on next `onOpen`) or `disconnected` (after max attempts via `onGiveUp`; also on `error` message).
+
+### Join Screen (`app/join.tsx`)
+
+Two-tab screen:
+- **Enter Code** tab: `TextInput` with `autoCapitalize="characters"`, auto-uppercases input, navigates to `/session/:code` on submit.
+- **Scan QR** tab: `expo-camera` `CameraView` with `barcodeTypes: ['qr']`. Extracts session code from scanned URL (`/session/CODE` pattern) or uses raw data as code. Requests camera permission via `useCameraPermissions`. Scanned state prevents duplicate navigation.
+
+### Audience Screen (`app/session/[code].tsx`)
+
+- Renders `ScriptView` once session + play are loaded and `currentPosition` is set.
+- `useWindowDimensions` drives compact header spacing in landscape.
+- `useSafeAreaInsets` applies `paddingBottom` for iPad home bar.
+- `ConnectionBadge` shows ws status pill: green Live / yellow Reconnecting… / red Disconnected.
+
+### ScriptView (`src/components/ScriptView.tsx`)
+
+Converts `FlatLine[]` + `currentPosition` into a flat `ScriptListItem[]` array:
+- Inserts `act_header` items on act boundary changes
+- Inserts `scene_header` items on scene boundary changes
+- Each `line` item carries an `isActive` flag
+
+`scrollToIndex` fires on every `activeIndex` change (`viewPosition: 0.35`). `onScrollToIndexFailed` falls back to estimated offset scroll.
+
+### LineItem (`src/components/LineItem.tsx`)
+
+Renders a `ScriptListItem` union:
+- `act_header` — bold accent uppercase label with top padding
+- `scene_header` — muted tertiary uppercase label
+- `line` (dialogue) — character label + text; active row gets `bg-app-card` highlight
+- `line` (stage_direction / action) — italic text; active row gets `bg-app-card` highlight
+
+Exports `ScriptListItem` type for use by `ScriptView`.
+
+### SessionWebSocket Extensions (Sprint 5)
+
+Three new public methods added to `SessionWebSocket` (not on `ISessionWebSocket` interface — audience-specific):
+
+| Method | Fires when |
+|--------|-----------|
+| `onOpen(handler)` / `offOpen(handler)` | WebSocket connection established |
+| `onClose(handler)` / `offClose(handler)` | WebSocket dropped while `shouldReconnect=true` |
+| `onGiveUp(handler)` / `offGiveUp(handler)` | Max reconnect attempts reached (10) |
+
+### New Dependencies (Sprint 5)
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `expo-camera` | `~15.0.16` | QR code scanning in join screen |
+
+Plugin configured in `app.config.ts` with camera usage description. `orientation` changed from `'portrait'` to `'default'` to support landscape on the audience screen.
+
 ## Development
 
 ```bash
