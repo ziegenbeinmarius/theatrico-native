@@ -55,7 +55,9 @@ import { useSession } from '@/hooks/useSession';
 
 ## Styling with NativeWind
 
-Use `className` props instead of `StyleSheet.create`. Custom brand colors are defined in `tailwind.config.js` under `theme.extend.colors.app`:
+**All styling MUST use NativeWind `className` props.** Do not use `StyleSheet.create` for new code. Any existing `StyleSheet.create` usage should be migrated to NativeWind when touching those files.
+
+Custom brand colors are defined in `tailwind.config.js` under `theme.extend.colors.app`:
 
 | Token           | Hex       | Usage                        |
 |-----------------|-----------|------------------------------|
@@ -70,7 +72,18 @@ Use `className` props instead of `StyleSheet.create`. Custom brand colors are de
 | `app-tertiary`  | `#6666aa` | De-emphasised links          |
 | `app-subtle`    | `#555577` | Background labels/codes      |
 
-Dynamic values (e.g. `insets.top` from `useSafeAreaInsets`) cannot be expressed as static Tailwind classes — pass those via the `style` prop alongside `className`.
+### Rules
+
+1. **Use `className`** for all static layout, spacing, color, and typography.
+2. **Use `style` prop** alongside `className` only for truly dynamic values (e.g. `insets.top` from `useSafeAreaInsets`, computed dimensions). Never put static hex colors or pixel values in `style` when a Tailwind class exists.
+3. **Conditional classes**: use template literals — `className={\`base-class ${condition ? 'active-class' : 'inactive-class'}\`}`.
+4. **Arbitrary values**: use bracket syntax for values not in the default Tailwind scale — `text-[13px]`, `tracking-[2px]`, `bg-[#1a0a20]`.
+5. **ScrollView / FlatList content containers**: use `contentContainerClassName` (NativeWind v4) for static classes; keep `contentContainerStyle` only for dynamic inset values.
+6. **One permitted `StyleSheet` exception**: `StyleSheet.hairlineWidth` for true single-pixel borders on retina screens. All other `StyleSheet` usage is prohibited.
+
+### Naming conventions
+
+Prefer the brand tokens (`text-app-muted`, `bg-app-card`) over raw hex values in className. Use raw hex only when a value falls outside the defined token set.
 
 ## Architecture Principles
 

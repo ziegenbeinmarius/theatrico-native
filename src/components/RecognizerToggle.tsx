@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 interface Props {
   value: 'whisper' | 'native';
@@ -13,7 +13,7 @@ const OPTIONS: { label: string; value: 'whisper' | 'native' }[] = [
 
 export function RecognizerToggle({ value, onChange, disabled = false }: Props) {
   return (
-    <View style={styles.container}>
+    <View className="flex-row bg-app-input rounded-[10px] p-[3px] gap-[3px]">
       {OPTIONS.map((opt) => {
         const isNativeDisabled = opt.value === 'native' && Platform.OS !== 'ios';
         const isActive = value === opt.value;
@@ -23,18 +23,14 @@ export function RecognizerToggle({ value, onChange, disabled = false }: Props) {
           <Pressable
             key={opt.value}
             onPress={() => !isDisabled && onChange(opt.value)}
-            style={[
-              styles.option,
-              isActive && styles.optionActive,
-              isDisabled && styles.optionDisabled,
-            ]}
+            className={`flex-1 py-2 px-3 rounded-lg items-center ${
+              isActive ? 'bg-app-accent' : ''
+            } ${isDisabled ? 'opacity-40' : ''}`}
           >
             <Text
-              style={[
-                styles.label,
-                isActive && styles.labelActive,
-                isDisabled && styles.labelDisabled,
-              ]}
+              className={`text-[13px] font-semibold ${
+                isActive ? 'text-white' : isDisabled ? 'text-app-subtle' : 'text-app-muted'
+              }`}
             >
               {opt.label}
               {isNativeDisabled ? ' (iOS)' : ''}
@@ -45,37 +41,3 @@ export function RecognizerToggle({ value, onChange, disabled = false }: Props) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    backgroundColor: '#0f3460',
-    borderRadius: 10,
-    padding: 3,
-    gap: 3,
-  },
-  option: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  optionActive: {
-    backgroundColor: '#e94560',
-  },
-  optionDisabled: {
-    opacity: 0.4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8888bb',
-  },
-  labelActive: {
-    color: '#ffffff',
-  },
-  labelDisabled: {
-    color: '#555577',
-  },
-});

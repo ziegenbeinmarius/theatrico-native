@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
@@ -73,39 +73,45 @@ export default function OperatorScreen() {
       <Stack.Screen options={{ title: 'Operator', headerShown: true }} />
 
       <View
-        style={[
-          styles.container,
-          { paddingBottom: insets.bottom + 12 },
-        ]}
+        className="flex-1 bg-app-dark px-4 pt-3 gap-3"
+        style={{ paddingBottom: insets.bottom + 12 }}
       >
         {/* Disconnect banner */}
         {wsDisconnected ? (
-          <View style={styles.disconnectBanner}>
-            <Text style={styles.disconnectText}>⚠ Connection lost — reconnecting…</Text>
+          <View className="bg-[#3a1a00] rounded-lg py-2 px-3 border-l-[3px] border-l-app-accent">
+            <Text className="text-[#ffaa55] text-[13px] font-semibold">
+              ⚠ Connection lost — reconnecting…
+            </Text>
           </View>
         ) : null}
 
         {isLoading ? (
-          <View style={styles.centered}>
+          <View className="flex-1 items-center justify-center gap-2">
             <ActivityIndicator color="#e94560" size="large" />
-            <Text style={styles.loadingText}>Loading session…</Text>
+            <Text className="text-app-muted text-sm">Loading session…</Text>
           </View>
         ) : error ? (
-          <View style={styles.centered}>
-            <Text style={styles.errorText}>Failed to load session</Text>
-            <Text style={styles.errorDetail}>{error.message}</Text>
+          <View className="flex-1 items-center justify-center gap-2">
+            <Text className="text-app-accent text-base font-bold">Failed to load session</Text>
+            <Text className="text-app-muted text-[13px]">{error.message}</Text>
           </View>
         ) : (
           <>
             {/* Session code */}
-            <View style={styles.codeRow}>
-              <Text style={styles.codeLabel}>SESSION CODE</Text>
-              <Text style={styles.codeValue}>{sessionCode}</Text>
+            <View className="flex-row items-center gap-2.5 bg-app-card rounded-[10px] px-[14px] py-2.5">
+              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px]">
+                SESSION CODE
+              </Text>
+              <Text className="text-xl text-app-text font-extrabold tracking-[4px]">
+                {sessionCode}
+              </Text>
             </View>
 
             {/* Recognizer toggle */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>RECOGNIZER</Text>
+            <View className="gap-1.5">
+              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
+                RECOGNIZER
+              </Text>
               <RecognizerToggle
                 value={recognizer.type}
                 onChange={(type) => void switchRecognizer(type)}
@@ -114,44 +120,66 @@ export default function OperatorScreen() {
             </View>
 
             {/* Script position */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>CURRENT POSITION</Text>
+            <View className="gap-1.5">
+              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
+                CURRENT POSITION
+              </Text>
               <ScriptPositionCard play={play} position={currentPosition} />
             </View>
 
             {/* Cursor controls */}
-            <View style={styles.cursorRow}>
-              <Pressable style={styles.cursorButton} onPress={handleMovePrev}>
-                <Text style={styles.cursorButtonText}>← Prev</Text>
+            <View className="flex-row gap-2">
+              <Pressable
+                className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
+                onPress={handleMovePrev}
+              >
+                <Text className="text-app-label text-sm font-semibold">← Prev</Text>
               </Pressable>
               <Pressable
-                style={[styles.pauseButton, isPaused && styles.pauseButtonActive]}
+                className={`flex-[1.4] rounded-[10px] py-3 items-center border ${
+                  isPaused
+                    ? 'bg-[#1a0a20] border-app-accent'
+                    : 'bg-app-card border-transparent'
+                }`}
                 onPress={handleTogglePause}
               >
-                <Text style={[styles.pauseButtonText, isPaused && styles.pauseButtonTextActive]}>
+                <Text
+                  className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}
+                >
                   {isPaused ? '▶ Resume' : '⏸ Pause'}
                 </Text>
               </Pressable>
-              <Pressable style={styles.cursorButton} onPress={handleMoveNext}>
-                <Text style={styles.cursorButtonText}>Next →</Text>
+              <Pressable
+                className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
+                onPress={handleMoveNext}
+              >
+                <Text className="text-app-label text-sm font-semibold">Next →</Text>
               </Pressable>
             </View>
 
             {/* Transcript */}
-            <View style={styles.transcriptSection}>
-              <Text style={styles.sectionLabel}>TRANSCRIPT</Text>
-              <View style={styles.transcriptContainer}>
+            <View className="flex-1 gap-1.5 min-h-[80px]">
+              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
+                TRANSCRIPT
+              </Text>
+              <View className="flex-1 bg-app-card rounded-xl overflow-hidden">
                 <TranscriptLog items={transcriptItems} />
               </View>
             </View>
 
             {/* Mic button */}
             <Pressable
-              style={[styles.micButton, isRecording && styles.micButtonActive]}
+              className={`flex-row rounded-[14px] py-[14px] items-center justify-center gap-2 border-2 ${
+                isRecording
+                  ? 'bg-[#1a0a20] border-app-accent'
+                  : 'bg-app-card border-[#2a2a5a]'
+              }`}
               onPress={handleMicPress}
             >
-              <Text style={styles.micIcon}>{isRecording ? '⏹' : '🎙'}</Text>
-              <Text style={styles.micLabel}>{isRecording ? 'Stop Mic' : 'Start Mic'}</Text>
+              <Text className="text-xl">{isRecording ? '⏹' : '🎙'}</Text>
+              <Text className="text-app-text text-base font-bold">
+                {isRecording ? 'Stop Mic' : 'Start Mic'}
+              </Text>
             </Pressable>
           </>
         )}
@@ -159,147 +187,3 @@ export default function OperatorScreen() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 12,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  loadingText: {
-    color: '#8888bb',
-    fontSize: 14,
-  },
-  errorText: {
-    color: '#e94560',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorDetail: {
-    color: '#8888bb',
-    fontSize: 13,
-  },
-  disconnectBanner: {
-    backgroundColor: '#3a1a00',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: '#e94560',
-  },
-  disconnectText: {
-    color: '#ffaa55',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  codeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#16213e',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  codeLabel: {
-    fontSize: 10,
-    color: '#6666aa',
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  codeValue: {
-    fontSize: 20,
-    color: '#e0e0ff',
-    fontWeight: '800',
-    letterSpacing: 4,
-  },
-  section: {
-    gap: 6,
-  },
-  sectionLabel: {
-    fontSize: 10,
-    color: '#6666aa',
-    fontWeight: '700',
-    letterSpacing: 1,
-    paddingLeft: 2,
-  },
-  cursorRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  cursorButton: {
-    flex: 1,
-    backgroundColor: '#16213e',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  cursorButtonText: {
-    color: '#aaaacc',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pauseButton: {
-    flex: 1.4,
-    backgroundColor: '#16213e',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  pauseButtonActive: {
-    borderColor: '#e94560',
-    backgroundColor: '#1a0a20',
-  },
-  pauseButtonText: {
-    color: '#aaaacc',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  pauseButtonTextActive: {
-    color: '#e94560',
-  },
-  transcriptSection: {
-    flex: 1,
-    gap: 6,
-    minHeight: 80,
-  },
-  transcriptContainer: {
-    flex: 1,
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  micButton: {
-    flexDirection: 'row',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 2,
-    borderColor: '#2a2a5a',
-  },
-  micButtonActive: {
-    backgroundColor: '#1a0a20',
-    borderColor: '#e94560',
-  },
-  micIcon: {
-    fontSize: 20,
-  },
-  micLabel: {
-    color: '#e0e0ff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-});

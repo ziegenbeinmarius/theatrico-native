@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlays } from '@/hooks/usePlays';
@@ -39,41 +39,58 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
-      ]}
+      className="flex-1 bg-app-dark"
+      contentContainerClassName="flex-grow px-5 gap-5"
+      contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Theatrico</Text>
-      <Text style={styles.subtitle}>Script Prompter</Text>
+      <Text className="text-[42px] font-bold text-app-text text-center tracking-[2px]">
+        Theatrico
+      </Text>
+      <Text className="text-sm text-app-muted text-center tracking-[4px] mb-2">
+        Script Prompter
+      </Text>
 
       {/* Operator section */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Operator</Text>
-        <Text style={styles.sectionDesc}>Select a play and start a session</Text>
+      <View className="bg-app-card rounded-2xl p-[18px] gap-3">
+        <Text className="text-[13px] font-bold text-app-label uppercase tracking-[1px]">
+          Operator
+        </Text>
+        <Text className="text-[13px] text-app-tertiary -mt-1.5">
+          Select a play and start a session
+        </Text>
 
         {playsLoading ? (
-          <ActivityIndicator color="#e94560" style={styles.loader} />
+          <ActivityIndicator color="#e94560" className="my-3" />
         ) : playsError ? (
-          <Text style={styles.errorText}>Could not load plays. Check your connection.</Text>
+          <Text className="text-[13px] text-app-accent">
+            Could not load plays. Check your connection.
+          </Text>
         ) : !plays?.length ? (
-          <Text style={styles.emptyText}>No plays available.</Text>
+          <Text className="text-[13px] text-app-subtle italic">No plays available.</Text>
         ) : (
-          <View style={styles.playList}>
+          <View className="gap-1.5">
             {plays.map((play) => {
               const isSelected = selectedPlay?.id === play.id;
               return (
                 <Pressable
                   key={play.id}
                   onPress={() => setSelectedPlay(play)}
-                  style={[styles.playItem, isSelected && styles.playItemSelected]}
+                  className={`rounded-[10px] p-3 border ${
+                    isSelected
+                      ? 'bg-[#1a0a20] border-app-accent'
+                      : 'bg-app-input border-transparent'
+                  }`}
                 >
-                  <Text style={[styles.playTitle, isSelected && styles.playTitleSelected]}>
+                  <Text
+                    className={`text-[15px] font-semibold ${
+                      isSelected ? 'text-app-accent' : 'text-app-text'
+                    }`}
+                  >
                     {play.title}
                   </Text>
                   {play.description ? (
-                    <Text style={styles.playDesc} numberOfLines={1}>
+                    <Text className="text-xs text-app-muted mt-0.5" numberOfLines={1}>
                       {play.description}
                     </Text>
                   ) : null}
@@ -83,28 +100,36 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {createError ? <Text style={styles.errorText}>{createError}</Text> : null}
+        {createError ? (
+          <Text className="text-[13px] text-app-accent">{createError}</Text>
+        ) : null}
 
         <Pressable
-          style={[styles.button, (!selectedPlay || creating) && styles.buttonDisabled]}
+          className={`bg-app-accent rounded-xl py-[14px] items-center ${
+            !selectedPlay || creating ? 'opacity-40' : ''
+          }`}
           onPress={handleCreateSession}
           disabled={!selectedPlay || creating}
         >
           {creating ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.buttonText}>Create Session →</Text>
+            <Text className="text-white text-[15px] font-bold">Create Session →</Text>
           )}
         </Pressable>
       </View>
 
       {/* Audience section */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Audience</Text>
-        <Text style={styles.sectionDesc}>Enter the session code shown by the operator</Text>
+      <View className="bg-app-card rounded-2xl p-[18px] gap-3">
+        <Text className="text-[13px] font-bold text-app-label uppercase tracking-[1px]">
+          Audience
+        </Text>
+        <Text className="text-[13px] text-app-tertiary -mt-1.5">
+          Enter the session code shown by the operator
+        </Text>
 
         <TextInput
-          style={styles.codeInput}
+          className="bg-app-input rounded-xl px-4 py-[13px] text-lg text-white tracking-[3px] text-center"
           value={joinCode}
           onChangeText={setJoinCode}
           placeholder="e.g. ABC123"
@@ -114,120 +139,15 @@ export default function HomeScreen() {
           onSubmitEditing={handleJoin}
         />
         <Pressable
-          style={[styles.button, styles.buttonSecondary, !joinCode.trim() && styles.buttonDisabled]}
+          className={`bg-app-input rounded-xl py-[14px] items-center ${
+            !joinCode.trim() ? 'opacity-40' : ''
+          }`}
           onPress={handleJoin}
           disabled={!joinCode.trim()}
         >
-          <Text style={styles.buttonText}>Join Session</Text>
+          <Text className="text-white text-[15px] font-bold">Join Session</Text>
         </Pressable>
       </View>
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#1a1a2e',
-    paddingHorizontal: 20,
-    gap: 20,
-  },
-  title: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#e0e0ff',
-    textAlign: 'center',
-    letterSpacing: 2,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8888bb',
-    textAlign: 'center',
-    letterSpacing: 4,
-    marginBottom: 8,
-  },
-  card: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#aaaacc',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  sectionDesc: {
-    fontSize: 13,
-    color: '#6666aa',
-    marginTop: -6,
-  },
-  loader: {
-    marginVertical: 12,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#e94560',
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#555577',
-    fontStyle: 'italic',
-  },
-  playList: {
-    gap: 6,
-  },
-  playItem: {
-    backgroundColor: '#0f3460',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  playItemSelected: {
-    borderColor: '#e94560',
-    backgroundColor: '#1a0a20',
-  },
-  playTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#e0e0ff',
-  },
-  playTitleSelected: {
-    color: '#e94560',
-  },
-  playDesc: {
-    fontSize: 12,
-    color: '#8888bb',
-    marginTop: 2,
-  },
-  button: {
-    backgroundColor: '#e94560',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonSecondary: {
-    backgroundColor: '#0f3460',
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  codeInput: {
-    backgroundColor: '#0f3460',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontSize: 18,
-    color: '#ffffff',
-    letterSpacing: 3,
-    textAlign: 'center',
-  },
-});
