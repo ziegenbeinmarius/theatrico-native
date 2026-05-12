@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 
@@ -8,30 +8,13 @@ export default function OperatorScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Operator', headerShown: true }} />
-      <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-        <Text style={styles.placeholder}>Operator Dashboard</Text>
-        <Text style={styles.sub}>Session management coming soon</Text>
+      <View
+        className="flex-1 bg-app-dark items-center justify-center p-6"
+        style={{ paddingBottom: insets.bottom }}
+      >
+        <Text className="text-2xl font-bold text-app-text">Operator Dashboard</Text>
+        <Text className="text-sm text-app-muted mt-2">Session management coming soon</Text>
       </View>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  placeholder: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#e0e0ff',
-  },
-  sub: {
-    fontSize: 14,
-    color: '#8888bb',
-    marginTop: 8,
-  },
-});

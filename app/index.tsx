@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
@@ -15,14 +15,19 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <Text style={styles.title}>Theatrico</Text>
-      <Text style={styles.subtitle}>Script Prompter</Text>
+    <View
+      className="flex-1 bg-app-dark items-center justify-center px-6"
+      style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+    >
+      <Text className="text-[42px] font-bold text-app-text tracking-[2px]">Theatrico</Text>
+      <Text className="text-base text-app-muted mb-12 tracking-widest">Script Prompter</Text>
 
-      <View style={styles.joinCard}>
-        <Text style={styles.label}>Enter Session Code</Text>
+      <View className="w-full bg-app-card rounded-2xl p-6 gap-3">
+        <Text className="text-sm text-app-label font-semibold tracking-wide">
+          Enter Session Code
+        </Text>
         <TextInput
-          style={styles.input}
+          className="bg-app-input rounded-xl px-4 py-3.5 text-lg text-white tracking-[3px] text-center"
           value={code}
           onChangeText={setCode}
           placeholder="e.g. ABC123"
@@ -31,78 +36,14 @@ export default function HomeScreen() {
           returnKeyType="join"
           onSubmitEditing={handleJoin}
         />
-        <TouchableOpacity style={styles.joinButton} onPress={handleJoin}>
-          <Text style={styles.joinButtonText}>Join Session</Text>
+        <TouchableOpacity className="bg-app-accent rounded-xl py-4 items-center" onPress={handleJoin}>
+          <Text className="text-white text-base font-bold tracking-wide">Join Session</Text>
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.operatorLink} onPress={() => router.push('/operator')}>
-        <Text style={styles.operatorLinkText}>Operator Login →</Text>
+      <TouchableOpacity className="mt-8" onPress={() => router.push('/operator')}>
+        <Text className="text-app-tertiary text-sm">Operator Login →</Text>
       </TouchableOpacity>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  title: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#e0e0ff',
-    letterSpacing: 2,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#8888bb',
-    marginBottom: 48,
-    letterSpacing: 1,
-  },
-  joinCard: {
-    width: '100%',
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 24,
-    gap: 12,
-  },
-  label: {
-    fontSize: 14,
-    color: '#aaaacc',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: '#0f3460',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 18,
-    color: '#ffffff',
-    letterSpacing: 3,
-    textAlign: 'center',
-  },
-  joinButton: {
-    backgroundColor: '#e94560',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  joinButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  operatorLink: {
-    marginTop: 32,
-  },
-  operatorLinkText: {
-    color: '#6666aa',
-    fontSize: 14,
-  },
-});
