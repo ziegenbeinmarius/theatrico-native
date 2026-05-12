@@ -96,4 +96,5 @@ export interface IAudioWebSocket {
   connect(): void;
   disconnect(): void;
   sendAudioChunk(chunk: ArrayBuffer): void;
+  sendFlush(): void;
 }

@@ -187,6 +187,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
               .catch(() => {});
           }
         }
+        // Trigger immediate backend transcription so both paths stay in sync.
+        audioWsRef.current?.sendFlush();
       }
     });
     return unsub;

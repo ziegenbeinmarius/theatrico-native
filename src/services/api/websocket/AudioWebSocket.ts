@@ -42,6 +42,12 @@ export class AudioWebSocket implements IAudioWebSocket {
     }
   }
 
+  sendFlush(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'flush' }));
+    }
+  }
+
   private openSocket(): void {
     const ws = new WebSocket(this.url);
     ws.binaryType = 'arraybuffer';
