@@ -22,6 +22,7 @@ import type {
   SessionStatus,
 } from '@/domain';
 import { flattenLines, findLineIndex } from '@/lib/scriptUtils';
+import { matchTranscriptToScript, buildContextHint } from '@/lib/scriptMatcher';
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
@@ -72,14 +73,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     enabled: Boolean(sessionCode),
   });
 
-  const { data: plays, isLoading: playsLoading } = useQuery({
-    queryKey: ['plays'],
-    queryFn: () => theatricoClient.listPlays(),
-    enabled: Boolean(session),
-  });
-
-  const play = plays?.find((p) => p.id === session?.playId) ?? null;
-  const isLoading = sessionLoading || playsLoading;
+  const play = session?.play ?? null;
+  const isLoading = sessionLoading;
   const error = sessionError instanceof Error ? sessionError : null;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -99,6 +94,17 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const transcriptCounterRef = useRef(0);
+
+  // Refs so the recognizer callback always sees the latest play/position without stale closure
+  const flatLinesRef = useRef<ReturnType<typeof flattenLines>>([]);
+  const currentPositionRef = useRef<typeof currentPosition>(currentPosition);
+  const sessionCodeRef = useRef(sessionCode);
+
+  useEffect(() => { currentPositionRef.current = currentPosition; }, [currentPosition]);
+  useEffect(() => { sessionCodeRef.current = sessionCode; }, [sessionCode]);
+  useEffect(() => {
+    flatLinesRef.current = play ? flattenLines(play) : [];
+  }, [play]);
 
   useEffect(() => {
     if (!sessionCode) return;
@@ -166,6 +172,22 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
         }
         return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
       });
+
+      if (result.isFinal) {
+        const lines = flatLinesRef.current;
+        const pos = currentPositionRef.current;
+        const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
+        const matchIdx = matchTranscriptToScript(result.text, lines, currentIdx);
+        if (matchIdx >= 0) {
+          const matched = lines[matchIdx];
+          if (matched) {
+            setCurrentPosition(matched.position);
+            theatricoClient
+              .updatePosition(sessionCodeRef.current, matched.position)
+              .catch(() => {});
+          }
+        }
+      }
     });
     return unsub;
   }, [recognizer]);
@@ -213,7 +235,12 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       playsInSilentMode: true,
     });
 
-    await recognizer.start({ language: 'en-US' });
+    const lines = flatLinesRef.current;
+    const pos = currentPositionRef.current;
+    const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
+    const contextHint = buildContextHint(lines, currentIdx);
+
+    await recognizer.start({ language: 'en', contextHint });
     isRecordingRef.current = true;
     setIsRecording(true);
     void captureChunk();
@@ -253,8 +280,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     if (idx <= 0) return;
     const prevLine = lines[idx - 1];
     if (!prevLine) return;
-    await theatricoClient.updatePosition(sessionCode, prevLine.position);
     setCurrentPosition(prevLine.position);
+    theatricoClient.updatePosition(sessionCode, prevLine.position).catch(() => {});
   }, [play, currentPosition, sessionCode]);
 
   const moveNext = useCallback(async () => {
@@ -264,8 +291,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     if (idx < 0 || idx >= lines.length - 1) return;
     const nextLine = lines[idx + 1];
     if (!nextLine) return;
-    await theatricoClient.updatePosition(sessionCode, nextLine.position);
     setCurrentPosition(nextLine.position);
+    theatricoClient.updatePosition(sessionCode, nextLine.position).catch(() => {});
   }, [play, currentPosition, sessionCode]);
 
   return {

@@ -54,7 +54,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   backendUrl: 'https://theatrico.fly.dev',
-  recognizerPreference: 'native',
+  recognizerPreference: 'whisper',
   whisperModelSize: 'base',
   language: 'en',
 };

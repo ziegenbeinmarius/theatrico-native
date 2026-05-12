@@ -1,13 +1,22 @@
 import type { ISpeechRecognizer, RecognitionResult, RecognizeOptions } from './ISpeechRecognizer';
 
+type TranscribeRealtimeEvent = {
+  isCapturing: boolean;
+  data?: { result: string };
+  error?: string;
+};
+
 type WhisperContext = {
-  transcribe: (
-    audioPath: string,
-    options?: { language?: string },
-  ) => {
+  transcribeRealtime: (options?: {
+    language?: string;
+    prompt?: string;
+    realtimeAudioSec?: number;
+    realtimeAudioSliceSec?: number;
+    realtimeAudioMinSec?: number;
+  }) => Promise<{
     stop: () => Promise<void>;
-    promise: Promise<{ result: string; segments?: { text: string }[] }>;
-  };
+    subscribe: (callback: (event: TranscribeRealtimeEvent) => void) => void;
+  }>;
   release: () => Promise<void>;
 };
 
@@ -17,50 +26,10 @@ type WhisperModule = {
 
 type ExpoConstantsModule = {
   default?: {
-    executionEnvironment?: 'bare' | 'standalone' | 'storeClient' | string;
-    appOwnership?: 'expo' | 'standalone' | 'guest' | string;
+    executionEnvironment?: string;
+    appOwnership?: string;
   };
 };
-
-// expo-audio types are mirrored here so this class can lazy-require the native module.
-type RecordingOptions = {
-  extension: string;
-  sampleRate: number;
-  numberOfChannels: number;
-  bitRate: number;
-  android: object;
-  ios: {
-    extension: string;
-    outputFormat: string | number;
-    audioQuality: number;
-    sampleRate: number;
-    numberOfChannels: number;
-    bitRate: number;
-    linearPCMBitDepth: number;
-    linearPCMIsBigEndian: boolean;
-    linearPCMIsFloat: boolean;
-  };
-  web: object;
-};
-
-type Recording = {
-  prepareToRecordAsync: (options?: Partial<RecordingOptions>) => Promise<void>;
-  record: () => void;
-  stop: () => Promise<void>;
-  uri: string | null;
-};
-
-type AudioModule = {
-  requestRecordingPermissionsAsync: () => Promise<{ granted: boolean }>;
-  setAudioModeAsync: (mode: object) => Promise<void>;
-  AudioModule: { AudioRecorder: new (options: Partial<RecordingOptions>) => Recording };
-  RecordingPresets: { HIGH_QUALITY: RecordingOptions };
-  AudioQuality: { MAX: number };
-  IOSOutputFormat: { LINEARPCM: string | number };
-};
-
-const CHUNK_DURATION_MS = 2000;
-const OVERLAP_MS = 500;
 
 export interface WhisperModelOptions {
   modelUrl?: string;
@@ -74,10 +43,10 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   private resultListeners: Set<(r: RecognitionResult) => void> = new Set();
   private errorListeners: Set<(e: Error) => void> = new Set();
   private whisperCtx: WhisperContext | null = null;
-  private recording: Recording | null = null;
-  private chunkTimer: ReturnType<typeof setInterval> | null = null;
+  private stopRealtime: (() => Promise<void>) | null = null;
   private isRunning = false;
   private language: string | undefined;
+  private contextHint: string | undefined;
   private readonly modelOptions: WhisperModelOptions;
 
   constructor(modelOptions: WhisperModelOptions = {}) {
@@ -97,11 +66,34 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   async start(options: RecognizeOptions): Promise<void> {
     if (this.isRunning) return;
     this.language = options.language;
+    this.contextHint = options.contextHint;
     this.isRunning = true;
 
     try {
       await this.ensureModel();
-      await this.startRecordingLoop();
+
+      const { stop, subscribe } = await this.whisperCtx!.transcribeRealtime({
+        language: this.language,
+        prompt: this.contextHint,
+        // Process in 25s slices; whisper.cpp hard-clips at 30s internally
+        realtimeAudioSec: 300,
+        realtimeAudioSliceSec: 25,
+        realtimeAudioMinSec: 1,
+      });
+
+      this.stopRealtime = stop;
+
+      subscribe((event) => {
+        if (!this.isRunning) return;
+        if (event.error) {
+          this.emitError(new Error(event.error));
+          return;
+        }
+        const text = event.data?.result?.trim();
+        if (text) {
+          this.emitResult({ text, isFinal: !event.isCapturing });
+        }
+      });
     } catch (err) {
       this.isRunning = false;
       this.emitError(err instanceof Error ? err : new Error(String(err)));
@@ -112,19 +104,9 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   async stop(): Promise<void> {
     if (!this.isRunning) return;
     this.isRunning = false;
-
-    if (this.chunkTimer !== null) {
-      clearInterval(this.chunkTimer);
-      this.chunkTimer = null;
-    }
-
-    if (this.recording) {
-      try {
-        await this.recording.stop();
-      } catch {
-        // ignore stop errors
-      }
-      this.recording = null;
+    if (this.stopRealtime) {
+      await this.stopRealtime().catch(() => {});
+      this.stopRealtime = null;
     }
   }
 
@@ -146,8 +128,6 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   }
 
   private async downloadModel(url: string, onProgress?: (p: number) => void): Promise<string> {
-    // Download model to app cache directory using fetch + FileSystem
-    // expo-file-system is used for writing the blob to disk
     const FileSystem = this.requireFileSystem();
     const fileName = url.split('/').pop() ?? 'whisper-model.bin';
     const dest = `${FileSystem.cacheDirectory}${fileName}`;
@@ -165,70 +145,6 @@ export class WhisperRecognizer implements ISpeechRecognizer {
     return dest;
   }
 
-  private async startRecordingLoop(): Promise<void> {
-    const Audio = this.requireAudio();
-
-    const { granted } = await Audio.requestRecordingPermissionsAsync();
-    if (!granted) throw new Error('Microphone permission denied');
-
-    await Audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-
-    const startChunk = async () => {
-      if (!this.isRunning) return;
-
-      const rec = new Audio.AudioModule.AudioRecorder({
-        ...Audio.RecordingPresets.HIGH_QUALITY,
-        extension: '.wav',
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        bitRate: 256000,
-      });
-      await rec.prepareToRecordAsync({
-        ...Audio.RecordingPresets.HIGH_QUALITY,
-        extension: '.wav',
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        bitRate: 256000,
-        ios: {
-          extension: '.wav',
-          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-          audioQuality: Audio.AudioQuality.MAX,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          bitRate: 256000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-      });
-      rec.record();
-      this.recording = rec;
-
-      // After chunk duration, stop and transcribe
-      setTimeout(async () => {
-        if (!this.isRunning) return;
-        try {
-          await rec.stop();
-          const uri = rec.uri;
-          if (uri && this.whisperCtx) {
-            const { promise } = this.whisperCtx.transcribe(uri, {
-              language: this.language,
-            });
-            const { result } = await promise;
-            this.emitResult({ text: result.trim(), isFinal: false });
-          }
-        } catch (err) {
-          this.emitError(err instanceof Error ? err : new Error(String(err)));
-        }
-        // Start next overlapping chunk after OVERLAP_MS into previous chunk's duration
-      }, CHUNK_DURATION_MS - OVERLAP_MS);
-    };
-
-    await startChunk();
-    // Schedule recurring chunks with overlap
-    this.chunkTimer = setInterval(startChunk, CHUNK_DURATION_MS - OVERLAP_MS);
-  }
-
   private emitResult(result: RecognitionResult): void {
     this.resultListeners.forEach((cb) => cb(result));
   }
@@ -237,8 +153,6 @@ export class WhisperRecognizer implements ISpeechRecognizer {
     this.errorListeners.forEach((cb) => cb(err));
   }
 
-  // Lazy requires so the module can be imported without crashing on platforms
-  // where the native dependency is absent (e.g. web/jest).
   private requireWhisper(): WhisperModule {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -264,7 +178,7 @@ export class WhisperRecognizer implements ISpeechRecognizer {
 
   private getWhisperUnavailableMessage(): string {
     if (this.isRunningInExpoGo()) {
-      return 'Whisper is unavailable in Expo Go. Use a development build and reinstall the app.';
+      return 'Whisper is unavailable in Expo Go. Use a development build.';
     }
     return 'Whisper native module is not available. Rebuild/reinstall the app so native modules are linked.';
   }
@@ -279,11 +193,6 @@ export class WhisperRecognizer implements ISpeechRecognizer {
     } catch {
       return false;
     }
-  }
-
-  private requireAudio(): AudioModule {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-audio') as AudioModule;
   }
 
   private requireFileSystem(): {
