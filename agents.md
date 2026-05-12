@@ -55,7 +55,9 @@ import { useSession } from '@/hooks/useSession';
 
 ## Styling with NativeWind
 
-Use `className` props instead of `StyleSheet.create`. Custom brand colors are defined in `tailwind.config.js` under `theme.extend.colors.app`:
+**All styling MUST use NativeWind `className` props.** Do not use `StyleSheet.create` for new code. Any existing `StyleSheet.create` usage should be migrated to NativeWind when touching those files.
+
+Custom brand colors are defined in `tailwind.config.js` under `theme.extend.colors.app`:
 
 | Token           | Hex       | Usage                        |
 |-----------------|-----------|------------------------------|
@@ -70,7 +72,18 @@ Use `className` props instead of `StyleSheet.create`. Custom brand colors are de
 | `app-tertiary`  | `#6666aa` | De-emphasised links          |
 | `app-subtle`    | `#555577` | Background labels/codes      |
 
-Dynamic values (e.g. `insets.top` from `useSafeAreaInsets`) cannot be expressed as static Tailwind classes — pass those via the `style` prop alongside `className`.
+### Rules
+
+1. **Use `className`** for all static layout, spacing, color, and typography.
+2. **Use `style` prop** alongside `className` only for truly dynamic values (e.g. `insets.top` from `useSafeAreaInsets`, computed dimensions). Never put static hex colors or pixel values in `style` when a Tailwind class exists.
+3. **Conditional classes**: use template literals — `className={\`base-class ${condition ? 'active-class' : 'inactive-class'}\`}`.
+4. **Arbitrary values**: use bracket syntax for values not in the default Tailwind scale — `text-[13px]`, `tracking-[2px]`, `bg-[#1a0a20]`.
+5. **ScrollView / FlatList content containers**: use `contentContainerClassName` (NativeWind v4) for static classes; keep `contentContainerStyle` only for dynamic inset values.
+6. **One permitted `StyleSheet` exception**: `StyleSheet.hairlineWidth` for true single-pixel borders on retina screens. All other `StyleSheet` usage is prohibited.
+
+### Naming conventions
+
+Prefer the brand tokens (`text-app-muted`, `bg-app-card`) over raw hex values in className. Use raw hex only when a value falls outside the defined token set.
 
 ## Architecture Principles
 
@@ -273,6 +286,104 @@ Contract tests verify the `ISpeechRecognizer` interface against both mock implem
 - Optional `confidence` in `RecognitionResult`
 
 Run with: `npm test`
+
+## Operator Screen (Sprint 4)
+
+### Overview
+
+The operator console (`app/operator/index.tsx`) gives stage managers full session control. It receives a `code` URL param (set by the home screen after `POST /api/sessions`).
+
+### Data Flow
+
+```
+expo-av (Audio.Recording)
+        │ raw audio chunks (base64 → ArrayBuffer)
+        ▼
+AudioWebSocket  ──────────────────►  backend /api/sessions/:code/audio
+
+ISpeechRecognizer (NativeRecognizer | WhisperRecognizer)
+        │ RecognitionResult { text, isFinal }
+        ▼
+useOperatorSession.transcriptItems  ──►  TranscriptLog component
+
+SessionWebSocket  ◄──────────────────  backend /api/sessions/:code/ws
+        │ position_update | transcript | error
+        ▼
+useOperatorSession.currentPosition  ──►  ScriptPositionCard component
+```
+
+### useOperatorSession hook (`src/hooks/useOperatorSession.ts`)
+
+Central orchestration hook. Accepts a `sessionCode` string and returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session` | `Session \| undefined` | Fetched via React Query |
+| `play` | `Play \| null` | Play data for the session's playId |
+| `isLoading` | `boolean` | True while session/play queries are pending |
+| `isRecording` | `boolean` | True while mic is active |
+| `transcriptItems` | `TranscriptItem[]` | Merged local + server transcript |
+| `currentPosition` | `Position \| null` | Current script cursor |
+| `wsDisconnected` | `boolean` | True after `error` WS message |
+| `error` | `Error \| null` | Session load error |
+| `startRecording()` | `() => Promise<void>` | Requests mic permission, starts recognizer + audio capture |
+| `stopRecording()` | `() => Promise<void>` | Stops recognizer + audio capture |
+| `togglePause()` | `() => Promise<void>` | PATCH session status active↔paused |
+| `movePrev()` | `() => Promise<void>` | PATCH position to previous line |
+| `moveNext()` | `() => Promise<void>` | PATCH position to next line |
+
+Audio capture uses a chunked stop/restart loop (`CHUNK_DURATION_MS = 3000`). Each chunk is base64-decoded and sent via `audioWsRef.current.sendAudioChunk()`. The `ISpeechRecognizer` (from `SpeechRecognizerContext`) runs in parallel for local transcript display.
+
+**Transcript merging**: Partial results replace the last partial entry; final results are appended. This applies to both local recognizer results and server `transcript` WebSocket messages.
+
+### Components
+
+| Component | File | Props | Purpose |
+|-----------|------|-------|---------|
+| `RecognizerToggle` | `src/components/RecognizerToggle.tsx` | `value`, `onChange`, `disabled` | Segmented control; disables Native on non-iOS |
+| `TranscriptLog` | `src/components/TranscriptLog.tsx` | `items: TranscriptItem[]` | Auto-scrolling FlatList; partial=gray, final=white |
+| `ScriptPositionCard` | `src/components/ScriptPositionCard.tsx` | `play`, `position` | Current act/scene/line + next-line preview |
+
+### scriptUtils (`src/lib/scriptUtils.ts`)
+
+Pure helpers shared by the hook (navigation) and ScriptPositionCard (display):
+
+```ts
+flattenLines(play: Play): FlatLine[]       // ordered array of all lines across acts/scenes
+findLineIndex(lines: FlatLine[], lineId: string): number
+```
+
+`FlatLine` carries `{ position, line, actTitle, sceneTitle, act, scene }`.
+
+### Home Screen Updates (Sprint 4)
+
+`app/index.tsx` now serves both roles:
+- **Operator** — scrollable play list (via `usePlays`), "Create Session →" button calls `POST /api/sessions`, navigates to `/operator?code=XYZ`
+- **Audience** — enter session code, "Join Session" navigates to `/session/:code`
+
+### Permission Handling
+
+`startRecording()` in `useOperatorSession` calls `Audio.requestPermissionsAsync()` before touching the microphone. If permission is denied it throws `'Microphone permission denied'`; the operator screen catches this and shows an `Alert`. The `NativeRecognizer` also independently calls `NativeSpeech.requestPermissionsAsync()` (iOS `SFSpeechRecognizer` requires a separate speech recognition permission).
+
+### Provider Tree
+
+`app/_layout.tsx` now wraps the app in `<SpeechRecognizerProvider>` (Sprint 4 addition, outside the `<Stack>` so all screens share one recognizer instance):
+
+```
+QueryClientProvider
+  SafeAreaProvider
+    SpeechRecognizerProvider   ← Sprint 4
+      Stack
+```
+
+### New REST Endpoints Used
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `PATCH` | `/api/sessions/:code` | Toggle pause (`{ status: 'paused' | 'active' }`) |
+| `PATCH` | `/api/sessions/:code/position` | Move cursor (`Position` body) |
+
+Both are implemented in `theatricoClient.ts` as `updateStatus()` and `updatePosition()`, and declared on `ITheatricoClient` in `src/domain/index.ts`.
 
 ## Development
 
