@@ -324,7 +324,7 @@ Central orchestration hook. Accepts a `sessionCode` string and returns:
 | `isRecording` | `boolean` | True while mic is active |
 | `transcriptItems` | `TranscriptItem[]` | Merged local + server transcript |
 | `currentPosition` | `Position \| null` | Current script cursor |
-| `wsDisconnected` | `boolean` | True after `error` WS message |
+| `wsStatus` | `WsStatus` | `'connecting' \| 'connected' \| 'reconnecting' \| 'disconnected'` — tracks live WS connection state |
 | `error` | `Error \| null` | Session load error |
 | `startRecording()` | `() => Promise<void>` | Requests mic permission, starts recognizer + audio capture |
 | `stopRecording()` | `() => Promise<void>` | Stops recognizer + audio capture |
@@ -480,4 +480,152 @@ npm run lint         # Lint with ESLint
 npm run typecheck    # Type-check with tsc
 npm run format       # Auto-format with Prettier
 npm test             # Run Jest unit tests
+```
+
+## Settings (Sprint 6)
+
+### SettingsContext (`src/context/SettingsContext.tsx`)
+
+Provides app-wide user preferences via React context, persisted to AsyncStorage under `@theatrico/settings`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `backendUrl` | `string` | `'http://localhost:8080'` | Base URL for REST + WebSocket; updated live (no restart needed) |
+| `recognizerPreference` | `'native' \| 'whisper'` | `'native'` | Default recognizer when operator screen loads |
+| `whisperModelSize` | `'tiny' \| 'base' \| 'small'` | `'base'` | Which Whisper.cpp model to download/use |
+| `language` | `string` | `'en'` | BCP-47 language code passed to both recognizers |
+
+`updateSettings(patch)` merges the patch into the current state and immediately persists it. When `backendUrl` changes, `setBackendUrl()` from `src/lib/config.ts` is called so that future fetch and WebSocket connections use the new value without requiring a reload.
+
+Wrap the app once (inside `SafeAreaProvider`, outside `SpeechRecognizerProvider`):
+
+```tsx
+// app/_layout.tsx
+<SettingsProvider>
+  <SpeechRecognizerProvider>
+    <Stack />
+  </SpeechRecognizerProvider>
+</SettingsProvider>
+```
+
+### Dynamic Backend URL (`src/lib/config.ts`)
+
+`config.backendUrl` is now a getter backed by a module-level `let` variable. `setBackendUrl(url)` updates it and persists the new value to AsyncStorage. The REST client (`theatricoClient`) reads `config.backendUrl` per-request; WebSocket clients read it at connection time. This means changing the URL in Settings takes effect for the next request / next connection without restarting the app.
+
+### Settings Screen (`app/settings.tsx`)
+
+Reachable via the ⚙ button in the Operator header. Presents four sections:
+
+1. **Backend** — `TextInput` for the backend URL. Validates `http://|https://|ws://|wss://` prefix on blur; invalid entries show an inline error and do not persist.
+2. **Speech Recognizer** — Segmented control (Native / Whisper) that updates `recognizerPreference`.
+3. **Whisper Model** — Radio-style list (tiny / base / small) with size and accuracy notes. Changing model size shows an alert explaining the new model will download on next switch.
+4. **Recognition Language** — Radio-style list of ten supported languages.
+
+### Whisper Model Download Sheet (`src/components/ModelDownloadSheet.tsx`)
+
+An animated slide-up `Modal` (equivalent to a bottom sheet) shown when the operator opens the app with Whisper selected but the model file is not yet cached.
+
+Props:
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `visible` | `boolean` | Controls sheet visibility |
+| `modelSize` | `WhisperModelSize` | Determines which model URL/info to display |
+| `onDismiss` | `() => void` | Called when user taps "Not Now" or the scrim |
+| `onDownloadComplete` | `() => void` | Called 500 ms after download finishes |
+
+Internal state machine: `idle` → `downloading` → `done` (or `error` on failure). Shows a progress bar during download, a retry button on error, and a cancel button mid-download. Model files are saved to `FileSystem.cacheDirectory`; existing files are detected and skipped.
+
+### Provider Tree (Sprint 6 update)
+
+```
+QueryClientProvider
+  SafeAreaProvider
+    SettingsProvider        ← Sprint 6
+      SpeechRecognizerProvider
+        Stack
+```
+
+## Build (Sprint 6)
+
+### EAS Build (`eas.json`)
+
+Three build profiles configured with Expo Application Services:
+
+| Profile | Purpose | Distribution | iOS Simulator |
+|---------|---------|--------------|---------------|
+| `development` | Local dev with Expo Dev Client | Internal | ✓ |
+| `preview` | Internal TestFlight beta | Internal | ✗ |
+| `production` | App Store release | Store | ✗ |
+
+All profiles accept a `BACKEND_URL` environment variable (can be overridden via EAS secrets or `.env`).
+
+```bash
+# Install EAS CLI
+npm install -g eas-cli
+
+# Authenticate
+eas login
+
+# Build for simulator (dev)
+eas build --profile development --platform ios
+
+# Build for TestFlight
+eas build --profile preview --platform ios
+
+# Submit to App Store
+eas submit --platform ios
+```
+
+### iOS Permissions (`app.config.ts`)
+
+`ios.infoPlist` entries required for App Store submission:
+
+| Key | Reason |
+|-----|--------|
+| `NSMicrophoneUsageDescription` | Operator screen uses microphone for live transcription |
+| `NSSpeechRecognitionUsageDescription` | Used by the native `SFSpeechRecognizer` engine |
+| `NSCameraUsageDescription` | Join screen scans session QR codes |
+
+`ios.supportsTablet: true` enables the iPad two-column operator layout.
+
+### Environment Variables (`.env.example`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND_URL` | `http://localhost:8080` | Initial backend URL baked into the build; overridable at runtime via Settings |
+
+Copy `.env.example` to `.env` and set values before running `expo start` or EAS builds. The value is surfaced through `Constants.expoConfig.extra.BACKEND_URL` in `src/lib/config.ts`.
+
+## Deployment
+
+### Prerequisites
+
+1. Expo account with EAS enabled (`eas login`)
+2. Apple Developer account with app registered in App Store Connect
+3. Fill in `eas.json` `submit.production.ios` fields: `appleId`, `ascAppId`, `appleTeamId`
+4. Set `BACKEND_URL` in EAS project secrets (`eas secret:create --name BACKEND_URL --value https://your-backend.com`)
+
+### TestFlight (Preview)
+
+```bash
+eas build --profile preview --platform ios
+eas submit --platform ios --latest   # uploads to TestFlight automatically
+```
+
+### App Store (Production)
+
+```bash
+eas build --profile production --platform ios
+eas submit --platform ios --latest
+```
+
+`autoIncrement: true` in the production profile bumps the build number automatically.
+
+### Local iOS Simulator
+
+```bash
+eas build --profile development --platform ios --local
+# or, without EAS:
+npm run ios
 ```

@@ -9,6 +9,8 @@ import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
 import type { IAudioWebSocket, ISessionWebSocket, Play, Position, Session, SessionMessage, SessionStatus } from '@/domain';
 import { flattenLines, findLineIndex } from '@/lib/scriptUtils';
 
+export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 export interface TranscriptItem {
   id: string;
   text: string;
@@ -23,7 +25,7 @@ export interface UseOperatorSessionResult {
   isRecording: boolean;
   transcriptItems: TranscriptItem[];
   currentPosition: Position | null;
-  wsDisconnected: boolean;
+  wsStatus: WsStatus;
   error: Error | null;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -65,9 +67,8 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const [isRecording, setIsRecording] = useState(false);
   const [transcriptItems, setTranscriptItems] = useState<TranscriptItem[]>([]);
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
-  const [wsDisconnected, setWsDisconnected] = useState(false);
+  const [wsStatus, setWsStatus] = useState<WsStatus>('connecting');
 
-  // Mirror session.currentPosition into local state once loaded
   useEffect(() => {
     if (session?.currentPosition) {
       setCurrentPosition(session.currentPosition);
@@ -81,7 +82,6 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const isRecordingRef = useRef(false);
   const transcriptCounterRef = useRef(0);
 
-  // WebSocket lifecycle
   useEffect(() => {
     if (!sessionCode) return;
 
@@ -90,10 +90,15 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     sessionWsRef.current = sessionWs;
     audioWsRef.current = audioWs;
 
+    setWsStatus('connecting');
+
+    const handleOpen = () => setWsStatus('connected');
+    const handleClose = () => setWsStatus('reconnecting');
+    const handleGiveUp = () => setWsStatus('disconnected');
+
     const handleMessage = (msg: SessionMessage) => {
       if (msg.type === 'position_update') {
         setCurrentPosition(msg.position);
-        setWsDisconnected(false);
       } else if (msg.type === 'transcript') {
         const id = String(++transcriptCounterRef.current);
         setTranscriptItems((prev) => {
@@ -104,16 +109,22 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
           return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
         });
       } else if (msg.type === 'error') {
-        setWsDisconnected(true);
+        setWsStatus('disconnected');
       }
     };
 
     sessionWs.onMessage(handleMessage);
+    sessionWs.onOpen(handleOpen);
+    sessionWs.onClose(handleClose);
+    sessionWs.onGiveUp(handleGiveUp);
     sessionWs.connect();
     audioWs.connect();
 
     return () => {
       sessionWs.offMessage(handleMessage);
+      sessionWs.offOpen(handleOpen);
+      sessionWs.offClose(handleClose);
+      sessionWs.offGiveUp(handleGiveUp);
       sessionWs.disconnect();
       audioWs.disconnect();
       sessionWsRef.current = null;
@@ -121,7 +132,6 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     };
   }, [sessionCode]);
 
-  // Local recognizer results
   useEffect(() => {
     const unsub = recognizer.onResult((result) => {
       const id = String(++transcriptCounterRef.current);
@@ -240,7 +250,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     isRecording,
     transcriptItems,
     currentPosition,
-    wsDisconnected,
+    wsStatus,
     error,
     startRecording,
     stopRecording,

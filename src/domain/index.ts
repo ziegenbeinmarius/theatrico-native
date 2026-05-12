@@ -83,6 +83,12 @@ export interface ISessionWebSocket {
   disconnect(): void;
   onMessage(handler: (msg: SessionMessage) => void): void;
   offMessage(handler: (msg: SessionMessage) => void): void;
+  onOpen(handler: () => void): void;
+  offOpen(handler: () => void): void;
+  onClose(handler: () => void): void;
+  offClose(handler: () => void): void;
+  onGiveUp(handler: () => void): void;
+  offGiveUp(handler: () => void): void;
 }
 
 export interface IAudioWebSocket {
