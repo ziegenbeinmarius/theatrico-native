@@ -104,6 +104,77 @@ Define interfaces in `src/domain/` before implementing services. This enables:
 | `app.config.ts`            | Bundle ID, scheme, Expo plugin config        |
 | `tsconfig.json`            | Path aliases and strict TypeScript settings  |
 
+## Backend / API Client
+
+### Configuration
+
+`src/lib/config.ts` reads `BACKEND_URL` from `expo-constants` extra config and falls back to `http://localhost:8080` for local dev.
+
+### Domain Types (`src/domain/index.ts`)
+
+Core TypeScript interfaces that mirror the Go backend JSON shapes:
+
+| Type | Description |
+|------|-------------|
+| `Play` | Top-level script with nested `Act[]` |
+| `Act` | Ordered collection of `Scene[]` |
+| `Scene` | Ordered collection of `Line[]` |
+| `Line` | Individual script line with character, text, and type |
+| `Session` | Active prompter session with a `code`, `playId`, and `currentPosition` |
+| `Position` | Pointer into the script: `{ playId, actId, sceneId, lineId }` |
+
+WebSocket message union type `SessionMessage` covers three variants:
+- `position_update` — operator moved the script cursor
+- `transcript` — speech-to-text result (with `isFinal` flag)
+- `error` — backend error with `code` and `message`
+
+Service interfaces (`ITheatricoClient`, `ISessionWebSocket`, `IAudioWebSocket`) live in `src/domain/index.ts` and enable mock substitution in tests.
+
+### REST Client (`src/services/api/theatricoClient.ts`)
+
+`ITheatricoClient` implementation backed by native `fetch`:
+
+| Method | Endpoint |
+|--------|----------|
+| `listPlays()` | `GET /api/plays` |
+| `createSession(playId)` | `POST /api/sessions` |
+| `getSession(code)` | `GET /api/sessions/:code` |
+
+Throws `Error` on non-2xx responses. Exported singleton: `theatricoClient`.
+
+### WebSocket Clients
+
+#### `SessionWebSocket` (`src/services/api/websocket/SessionWebSocket.ts`)
+
+Connects to `ws[s]://<backend>/api/sessions/:code/ws`. Features:
+- Typed JSON message dispatch via `onMessage` / `offMessage` listeners
+- Exponential backoff reconnect (up to 10 attempts, max 30 s)
+- `connect()` / `disconnect()` lifecycle control
+
+Factory: `createSessionWebSocket(code)` or `sessionWebSocketFactory(code)`.
+
+#### `AudioWebSocket` (`src/services/api/websocket/AudioWebSocket.ts`)
+
+Sends raw binary audio to `ws[s]://<backend>/api/sessions/:code/audio`. Features:
+- Binary (`arraybuffer`) mode
+- Queues `sendAudioChunk(buffer)` calls while reconnecting; flushes on re-open
+- Same exponential backoff as `SessionWebSocket`
+
+Factory: `createAudioWebSocket(code)`.
+
+### React Query (`src/lib/queryClient.ts`)
+
+Singleton `QueryClient` with `retry: 2` and `staleTime: 30 s`. Wrapped around the app in `app/_layout.tsx` via `<QueryClientProvider>`.
+
+### Hooks
+
+| Hook | Query key | Description |
+|------|-----------|-------------|
+| `usePlays()` | `['plays']` | Fetches all plays |
+| `useSession(code)` | `['sessions', code]` | Fetches a single session; skips when `code` is empty |
+
+Both hooks return the full React Query result object (`data`, `isLoading`, `error`, etc.).
+
 ## Development
 
 ```bash
