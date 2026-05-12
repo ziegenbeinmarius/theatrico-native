@@ -55,7 +55,7 @@ export function useAudienceSession(sessionCode: string): UseAudienceSessionResul
 
     const handleMessage = (msg: SessionMessage) => {
       if (msg.type === 'position_update') {
-        setCurrentPosition(msg.position);
+        if (msg.position) setCurrentPosition(msg.position);
       } else if (msg.type === 'error') {
         setWsStatus('disconnected');
       }

@@ -11,6 +11,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { theatricoClient } from '@/services/api/theatricoClient';
 import { createSessionWebSocket } from '@/services/api/websocket/SessionWebSocket';
 import { createAudioWebSocket } from '@/services/api/websocket/AudioWebSocket';
+import { createOperatorWebSocket, type OperatorWebSocket } from '@/services/api/websocket/OperatorWebSocket';
 import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
 import type {
   IAudioWebSocket,
@@ -19,7 +20,6 @@ import type {
   Position,
   Session,
   SessionMessage,
-  SessionStatus,
 } from '@/domain';
 import { flattenLines, findLineIndex } from '@/lib/scriptUtils';
 import { matchTranscriptToScript, buildContextHint } from '@/lib/scriptMatcher';
@@ -82,14 +82,16 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('connecting');
 
+  // Only sync initial position from session; use lineId string to avoid resetting on every refetch
   useEffect(() => {
     if (session?.currentPosition) {
       setCurrentPosition(session.currentPosition);
     }
-  }, [session?.currentPosition]);
+  }, [session?.currentPosition?.lineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionWsRef = useRef<ISessionWebSocket | null>(null);
   const audioWsRef = useRef<IAudioWebSocket | null>(null);
+  const operatorWsRef = useRef<OperatorWebSocket | null>(null);
   const audioRecordingRef = useRef<AudioRecorder | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
@@ -111,8 +113,10 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
     const sessionWs = createSessionWebSocket(sessionCode);
     const audioWs = createAudioWebSocket(sessionCode);
+    const operatorWs = createOperatorWebSocket(sessionCode);
     sessionWsRef.current = sessionWs;
     audioWsRef.current = audioWs;
+    operatorWsRef.current = operatorWs;
 
     setWsStatus('connecting');
 
@@ -122,7 +126,13 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
     const handleMessage = (msg: SessionMessage) => {
       if (msg.type === 'position_update') {
-        setCurrentPosition(msg.position);
+        // Backend sends { type, line: seqIdx } — convert seqIdx to our Position type
+        if (typeof msg.line === 'number') {
+          const matched = flatLinesRef.current[msg.line];
+          if (matched) setCurrentPosition(matched.position);
+        } else if (msg.position) {
+          setCurrentPosition(msg.position);
+        }
       } else if (msg.type === 'transcript') {
         const id = String(++transcriptCounterRef.current);
         setTranscriptItems((prev) => {
@@ -146,6 +156,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     sessionWs.onGiveUp(handleGiveUp);
     sessionWs.connect();
     audioWs.connect();
+    operatorWs.connect();
 
     return () => {
       sessionWs.offMessage(handleMessage);
@@ -154,8 +165,10 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       sessionWs.offGiveUp(handleGiveUp);
       sessionWs.disconnect();
       audioWs.disconnect();
+      operatorWs.disconnect();
       sessionWsRef.current = null;
       audioWsRef.current = null;
+      operatorWsRef.current = null;
     };
   }, [sessionCode]);
 
@@ -271,31 +284,34 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
   const togglePause = useCallback(async () => {
     if (!session) return;
-    const newStatus: SessionStatus = session.status === 'paused' ? 'active' : 'paused';
-    await theatricoClient.updateStatus(sessionCode, newStatus);
-  }, [session, sessionCode]);
+    if (session.status === 'paused') {
+      operatorWsRef.current?.resume();
+    } else {
+      operatorWsRef.current?.pause();
+    }
+  }, [session]);
 
   const movePrev = useCallback(async () => {
-    if (!play || !currentPosition) return;
-    const lines = flattenLines(play);
+    if (!currentPosition) return;
+    const lines = flatLinesRef.current;
     const idx = findLineIndex(lines, currentPosition.lineId);
     if (idx <= 0) return;
     const prevLine = lines[idx - 1];
     if (!prevLine) return;
     setCurrentPosition(prevLine.position);
-    theatricoClient.updatePosition(sessionCode, prevLine.position).catch(() => {});
-  }, [play, currentPosition, sessionCode]);
+    operatorWsRef.current?.forcePosition(idx - 1);
+  }, [currentPosition]);
 
   const moveNext = useCallback(async () => {
-    if (!play || !currentPosition) return;
-    const lines = flattenLines(play);
+    if (!currentPosition) return;
+    const lines = flatLinesRef.current;
     const idx = findLineIndex(lines, currentPosition.lineId);
     if (idx < 0 || idx >= lines.length - 1) return;
     const nextLine = lines[idx + 1];
     if (!nextLine) return;
     setCurrentPosition(nextLine.position);
-    theatricoClient.updatePosition(sessionCode, nextLine.position).catch(() => {});
-  }, [play, currentPosition, sessionCode]);
+    operatorWsRef.current?.forcePosition(idx + 1);
+  }, [currentPosition]);
 
   return {
     session,

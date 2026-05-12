@@ -112,7 +112,6 @@ export default function OperatorScreen() {
   const [showDownloadSheet, setShowDownloadSheet] = useState(false);
   const whisperNeedsDownload = useWhisperModelCheck(settings.whisperModelSize);
 
-  // Show download sheet when operator first opens with whisper preference and model not cached
   useEffect(() => {
     if (settings.recognizerPreference === 'whisper' && whisperNeedsDownload) {
       setShowDownloadSheet(true);
@@ -145,97 +144,107 @@ export default function OperatorScreen() {
   const handleMovePrev = async () => {
     try {
       await movePrev();
-    } catch {
-      // Ignore position update errors silently
-    }
+    } catch {}
   };
 
   const handleMoveNext = async () => {
     try {
       await moveNext();
-    } catch {
-      // Ignore position update errors silently
-    }
+    } catch {}
   };
 
-  // Controls panel (recognizer + position + cursor) used in both layouts
-  const ControlsPanel = (
-    <View className="gap-3">
-      {/* Recognizer toggle */}
-      <View className="gap-1.5">
-        <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
-          RECOGNIZER
-        </Text>
-        <RecognizerToggle
-          value={recognizer.type}
-          onChange={(type) => switchRecognizer(type)}
-          disabled={isRecording}
+  // iPad: side-by-side — script on left (wide), controls + transcript on right (narrow)
+  if (isIPad) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: 'Operator',
+            headerShown: true,
+            headerRight: () => (
+              <Pressable onPress={() => router.push('/settings')} className="px-2 py-1 mr-1">
+                <Text className="text-white text-[22px]">⚙</Text>
+              </Pressable>
+            ),
+          }}
         />
-      </View>
-
-      {/* Script position */}
-      <View className="gap-1.5">
-        <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
-          CURRENT POSITION
-        </Text>
-        <ScriptPositionCard play={play} position={currentPosition} />
-      </View>
-
-      {/* Cursor controls */}
-      <View className="flex-row gap-2">
-        <Pressable
-          className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
-          onPress={handleMovePrev}
+        <View
+          className="flex-1 flex-row gap-4 px-4 pt-3 bg-app-dark"
+          style={{ paddingBottom: insets.bottom + 12 }}
         >
-          <Text className="text-sm font-semibold text-app-label">← Prev</Text>
-        </Pressable>
-        <Pressable
-          className={`flex-[1.4] rounded-[10px] py-3 items-center border ${
-            isPaused ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-transparent'
-          }`}
-          onPress={handleTogglePause}
-        >
-          <Text className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}>
-            {isPaused ? '▶ Resume' : '⏸ Pause'}
-          </Text>
-        </Pressable>
-        <Pressable
-          className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
-          onPress={handleMoveNext}
-        >
-          <Text className="text-sm font-semibold text-app-label">Next →</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
+          <ReconnectOverlay status={wsStatus} />
 
-  // Transcript panel
-  const TranscriptPanel = (
-    <View className="flex-1 gap-1.5 min-h-[80px]">
-      <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px] pl-0.5">
-        TRANSCRIPT
-      </Text>
-      <View className="flex-1 overflow-hidden bg-app-card rounded-xl">
-        <TranscriptLog items={transcriptItems} />
-      </View>
-    </View>
-  );
+          {/* Left: full-height script */}
+          <View className="flex-[3] gap-2">
+            <View className="flex-row items-center gap-2.5 bg-app-card rounded-[10px] px-[14px] py-2">
+              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px]">SESSION</Text>
+              <Text className="text-lg text-app-text font-extrabold tracking-[4px]">{sessionCode}</Text>
+            </View>
+            <ScriptPositionCard play={play} position={currentPosition} lookahead={12} />
+          </View>
 
-  // Mic button
-  const MicButton = (
-    <Pressable
-      className={`flex-row rounded-[14px] py-[14px] items-center justify-center gap-2 border-2 ${
-        isRecording ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-[#2a2a5a]'
-      }`}
-      onPress={handleMicPress}
-    >
-      <Text className="text-xl">{isRecording ? '⏹' : '🎙'}</Text>
-      <Text className="text-base font-bold text-app-text">
-        {isRecording ? 'Stop Mic' : 'Start Mic'}
-      </Text>
-    </Pressable>
-  );
+          {/* Right: controls + transcript + mic */}
+          <View className="w-[300px] gap-3">
+            <StatusBanner
+              wsStatus={wsStatus}
+              apiError={error}
+              onRetry={() => router.replace({ pathname: '/operator', params: { code: sessionCode } })}
+            />
 
+            {/* Cursor row */}
+            <View className="flex-row gap-2">
+              <Pressable className="flex-1 bg-app-card rounded-[10px] py-3 items-center" onPress={handleMovePrev}>
+                <Text className="text-sm font-semibold text-app-label">← Prev</Text>
+              </Pressable>
+              <Pressable
+                className={`flex-[1.4] rounded-[10px] py-3 items-center border ${isPaused ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-transparent'}`}
+                onPress={handleTogglePause}
+              >
+                <Text className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}>
+                  {isPaused ? '▶ Resume' : '⏸ Pause'}
+                </Text>
+              </Pressable>
+              <Pressable className="flex-1 bg-app-card rounded-[10px] py-3 items-center" onPress={handleMoveNext}>
+                <Text className="text-sm font-semibold text-app-label">Next →</Text>
+              </Pressable>
+            </View>
+
+            {/* Recognizer toggle */}
+            <RecognizerToggle
+              value={recognizer.type}
+              onChange={(type) => switchRecognizer(type)}
+              disabled={isRecording}
+            />
+
+            {/* Transcript */}
+            <View className="flex-1 min-h-[60px] overflow-hidden bg-app-card rounded-xl">
+              <TranscriptLog items={transcriptItems} />
+            </View>
+
+            {/* Mic button */}
+            <Pressable
+              className={`flex-row rounded-[14px] py-[14px] items-center justify-center gap-2 border-2 ${isRecording ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-[#2a2a5a]'}`}
+              onPress={handleMicPress}
+            >
+              <Text className="text-xl">{isRecording ? '⏹' : '🎙'}</Text>
+              <Text className="text-base font-bold text-app-text">
+                {isRecording ? 'Stop Mic' : 'Start Mic'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <ModelDownloadSheet
+          visible={showDownloadSheet}
+          modelSize={settings.whisperModelSize}
+          onDismiss={() => setShowDownloadSheet(false)}
+          onDownloadComplete={() => setShowDownloadSheet(false)}
+        />
+      </>
+    );
+  }
+
+  // Phone: vertical layout — script takes most space
   return (
     <>
       <Stack.Screen
@@ -251,18 +260,10 @@ export default function OperatorScreen() {
       />
 
       <View
-        className="flex-1 gap-3 px-4 pt-3 bg-app-dark"
+        className="flex-1 gap-2.5 px-4 pt-3 bg-app-dark"
         style={{ paddingBottom: insets.bottom + 12 }}
       >
-        {/* Reconnect overlay (blocks interaction while reconnecting) */}
         <ReconnectOverlay status={wsStatus} />
-
-        {/* Status banners */}
-        <StatusBanner
-          wsStatus={wsStatus}
-          apiError={error}
-          onRetry={() => router.replace({ pathname: '/operator', params: { code: sessionCode } })}
-        />
 
         {isLoading ? (
           <View className="items-center justify-center flex-1 gap-2">
@@ -276,39 +277,79 @@ export default function OperatorScreen() {
           </View>
         ) : (
           <>
-            {/* Session code */}
-            <View className="flex-row items-center gap-2.5 bg-app-card rounded-[10px] px-[14px] py-2.5">
-              <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px]">
-                SESSION CODE
-              </Text>
-              <Text className="text-xl text-app-text font-extrabold tracking-[4px]">
-                {sessionCode}
-              </Text>
+            <StatusBanner
+              wsStatus={wsStatus}
+              apiError={error}
+              onRetry={() => router.replace({ pathname: '/operator', params: { code: sessionCode } })}
+            />
+
+            {/* Session code + recognizer toggle in one row */}
+            <View className="flex-row items-center gap-2">
+              <View className="flex-row items-center gap-2 bg-app-card rounded-[10px] px-3 py-2">
+                <Text className="text-[10px] text-app-tertiary font-bold tracking-[1px]">SESSION</Text>
+                <Text className="text-base text-app-text font-extrabold tracking-[3px]">{sessionCode}</Text>
+              </View>
+              <View className="flex-1">
+                <RecognizerToggle
+                  value={recognizer.type}
+                  onChange={(type) => switchRecognizer(type)}
+                  disabled={isRecording}
+                />
+              </View>
             </View>
 
-            {/* iPad two-column layout */}
-            {isIPad ? (
-              <View className="flex-row flex-1 gap-4">
-                {/* Left: Transcript + Mic */}
-                <View className="flex-1 gap-3">
-                  {TranscriptPanel}
-                  {MicButton}
-                </View>
-                {/* Right: Controls */}
-                <View className="w-[340px] gap-3">{ControlsPanel}</View>
-              </View>
-            ) : (
-              <>
-                {ControlsPanel}
-                {TranscriptPanel}
-                {MicButton}
-              </>
-            )}
+            {/* Script card — takes most of the remaining space */}
+            <View className="flex-[3]">
+              <ScriptPositionCard play={play} position={currentPosition} lookahead={8} />
+            </View>
+
+            {/* Cursor controls */}
+            <View className="flex-row gap-2">
+              <Pressable
+                className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
+                onPress={handleMovePrev}
+              >
+                <Text className="text-sm font-semibold text-app-label">← Prev</Text>
+              </Pressable>
+              <Pressable
+                className={`flex-[1.4] rounded-[10px] py-3 items-center border ${
+                  isPaused ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-transparent'
+                }`}
+                onPress={handleTogglePause}
+              >
+                <Text className={`text-sm font-bold ${isPaused ? 'text-app-accent' : 'text-app-label'}`}>
+                  {isPaused ? '▶ Resume' : '⏸ Pause'}
+                </Text>
+              </Pressable>
+              <Pressable
+                className="flex-1 bg-app-card rounded-[10px] py-3 items-center"
+                onPress={handleMoveNext}
+              >
+                <Text className="text-sm font-semibold text-app-label">Next →</Text>
+              </Pressable>
+            </View>
+
+            {/* Transcript — compact */}
+            <View className="flex-1 min-h-[60px] max-h-[120px] overflow-hidden bg-app-card rounded-xl">
+              <TranscriptLog items={transcriptItems} />
+            </View>
+
+            {/* Mic button */}
+            <Pressable
+              className={`flex-row rounded-[14px] py-[14px] items-center justify-center gap-2 border-2 ${
+                isRecording ? 'bg-[#1a0a20] border-app-accent' : 'bg-app-card border-[#2a2a5a]'
+              }`}
+              onPress={handleMicPress}
+            >
+              <Text className="text-xl">{isRecording ? '⏹' : '🎙'}</Text>
+              <Text className="text-base font-bold text-app-text">
+                {isRecording ? 'Stop Mic' : 'Start Mic'}
+              </Text>
+            </Pressable>
           </>
         )}
       </View>
 
-      {/* Whisper model download sheet */}
       <ModelDownloadSheet
         visible={showDownloadSheet}
         modelSize={settings.whisperModelSize}

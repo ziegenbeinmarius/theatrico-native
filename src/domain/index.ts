@@ -51,7 +51,11 @@ export interface Session {
 
 export interface PositionUpdateMessage {
   type: 'position_update';
-  position: Position;
+  // Backend sends integer indices; position is derived client-side from the flat lines array
+  line?: number;     // SeqIdx — 0-based cursor in the flattened script
+  act?: number;      // ActIdx (informational)
+  scene?: number;    // SceneIdx (informational)
+  position?: Position; // Used internally when position is already resolved
 }
 
 export interface TranscriptMessage {
