@@ -9,7 +9,7 @@ function resolveDefaultBackendUrl(): string {
   if (typeof envUrl === 'string' && envUrl.length > 0) {
     return envUrl;
   }
-  return 'http://localhost:8080';
+  return 'https://theatrico.fly.dev';
 }
 
 let _backendUrl = resolveDefaultBackendUrl();

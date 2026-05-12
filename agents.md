@@ -121,7 +121,7 @@ Define interfaces in `src/domain/` before implementing services. This enables:
 
 ### Configuration
 
-`src/lib/config.ts` reads `BACKEND_URL` from `expo-constants` extra config and falls back to `http://localhost:8080` for local dev.
+`src/lib/config.ts` reads `BACKEND_URL` from `expo-constants` extra config and falls back to `https://theatrico.fly.dev` for local dev.
 
 ### Domain Types (`src/domain/index.ts`)
 
@@ -490,7 +490,7 @@ Provides app-wide user preferences via React context, persisted to AsyncStorage 
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `backendUrl` | `string` | `'http://localhost:8080'` | Base URL for REST + WebSocket; updated live (no restart needed) |
+| `backendUrl` | `string` | `'https://theatrico.fly.dev'` | Base URL for REST + WebSocket; updated live (no restart needed) |
 | `recognizerPreference` | `'native' \| 'whisper'` | `'native'` | Default recognizer when operator screen loads |
 | `whisperModelSize` | `'tiny' \| 'base' \| 'small'` | `'base'` | Which Whisper.cpp model to download/use |
 | `language` | `string` | `'en'` | BCP-47 language code passed to both recognizers |
@@ -593,7 +593,7 @@ eas submit --platform ios
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BACKEND_URL` | `http://localhost:8080` | Initial backend URL baked into the build; overridable at runtime via Settings |
+| `BACKEND_URL` | `https://theatrico.fly.dev` | Initial backend URL baked into the build; overridable at runtime via Settings |
 
 Copy `.env.example` to `.env` and set values before running `expo start` or EAS builds. The value is surfaced through `Constants.expoConfig.extra.BACKEND_URL` in `src/lib/config.ts`.
 

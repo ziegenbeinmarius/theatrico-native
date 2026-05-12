@@ -1,12 +1,5 @@
 import { useRef, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -34,14 +27,12 @@ function SegmentedControl<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <View className="flex-row bg-app-input rounded-xl overflow-hidden">
+    <View className="flex-row overflow-hidden bg-app-input rounded-xl">
       {options.map((opt) => (
         <Pressable
           key={opt.value}
           onPress={() => onChange(opt.value)}
-          className={`flex-1 py-2.5 items-center ${
-            value === opt.value ? 'bg-app-accent' : ''
-          }`}
+          className={`flex-1 py-2.5 items-center ${value === opt.value ? 'bg-app-accent' : ''}`}
         >
           <Text
             className={`text-sm font-semibold ${
@@ -133,7 +124,7 @@ export default function SettingsScreen() {
         {/* Backend URL */}
         <View className="gap-2">
           <SectionHeader label="BACKEND" />
-          <View className="bg-app-card rounded-2xl p-4 gap-3">
+          <View className="gap-3 p-4 bg-app-card rounded-2xl">
             <Text className="text-app-label text-[13px]">Backend URL</Text>
             <TextInput
               ref={urlInputRef}
@@ -149,12 +140,10 @@ export default function SettingsScreen() {
               autoCorrect={false}
               keyboardType="url"
               returnKeyType="done"
-              placeholder="http://localhost:8080"
+              placeholder="https://theatrico.fly.dev"
               placeholderTextColor="#555577"
             />
-            {urlError ? (
-              <Text className="text-app-accent text-[12px]">{urlError}</Text>
-            ) : null}
+            {urlError ? <Text className="text-app-accent text-[12px]">{urlError}</Text> : null}
             <Text className="text-app-tertiary text-[12px]">
               Accepts http://, https://, ws://, or wss:// prefixes.
             </Text>
@@ -164,7 +153,7 @@ export default function SettingsScreen() {
         {/* Recognizer preference */}
         <View className="gap-2">
           <SectionHeader label="SPEECH RECOGNIZER" />
-          <View className="bg-app-card rounded-2xl p-4 gap-3">
+          <View className="gap-3 p-4 bg-app-card rounded-2xl">
             <Text className="text-app-label text-[13px]">Preferred engine</Text>
             <SegmentedControl<RecognizerPreference>
               options={[
@@ -183,12 +172,18 @@ export default function SettingsScreen() {
         {/* Whisper model size */}
         <View className="gap-2">
           <SectionHeader label="WHISPER MODEL" />
-          <View className="bg-app-card rounded-2xl p-4 gap-2">
+          <View className="gap-2 p-4 bg-app-card rounded-2xl">
             {(
               [
-                { value: 'tiny' as WhisperModelSize, label: 'Tiny — 75 MB (fastest, lower accuracy)' },
+                {
+                  value: 'tiny' as WhisperModelSize,
+                  label: 'Tiny — 75 MB (fastest, lower accuracy)',
+                },
                 { value: 'base' as WhisperModelSize, label: 'Base — 142 MB (balanced)' },
-                { value: 'small' as WhisperModelSize, label: 'Small — 466 MB (slower, higher accuracy)' },
+                {
+                  value: 'small' as WhisperModelSize,
+                  label: 'Small — 466 MB (slower, higher accuracy)',
+                },
               ] as { value: WhisperModelSize; label: string }[]
             ).map((opt) => (
               <OptionRow
@@ -208,7 +203,7 @@ export default function SettingsScreen() {
         {/* Language */}
         <View className="gap-2">
           <SectionHeader label="RECOGNITION LANGUAGE" />
-          <View className="bg-app-card rounded-2xl p-4 gap-2">
+          <View className="gap-2 p-4 bg-app-card rounded-2xl">
             {SUPPORTED_LANGUAGES.map((lang) => (
               <OptionRow
                 key={lang.code}

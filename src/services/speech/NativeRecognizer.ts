@@ -57,7 +57,10 @@ export class NativeRecognizer implements ISpeechRecognizer {
       },
     );
 
-    await NativeSpeechModule.startRecognition(options.language ?? 'en-US', options.contextHint ?? '');
+    await NativeSpeechModule.startRecognition(
+      options.language ?? 'en-US',
+      options.contextHint ?? '',
+    );
     this.isRunning = true;
   }
 
@@ -77,7 +80,13 @@ export class NativeRecognizer implements ISpeechRecognizer {
   // Lazy require keeps the module loadable in environments without the native binding (web, jest).
   // Path: from src/services/speech/ up three levels to repo root, then into modules/native-speech.
   private requireModule() {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('../../../modules/native-speech') as typeof import('../../../modules/native-speech');
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require('../../../modules/native-speech') as typeof import('../../../modules/native-speech');
+    } catch {
+      throw new Error(
+        'Native speech recognition is unavailable in Expo Go. Build a development client to use this feature.',
+      );
+    }
   }
 }

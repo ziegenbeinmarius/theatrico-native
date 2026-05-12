@@ -1,4 +1,8 @@
-import type { ISpeechRecognizer, RecognitionResult, RecognizeOptions } from '@/services/speech/ISpeechRecognizer';
+import type {
+  ISpeechRecognizer,
+  RecognitionResult,
+  RecognizeOptions,
+} from '@/services/speech/ISpeechRecognizer';
 
 // Mock implementation for contract testing
 class MockSpeechRecognizer implements ISpeechRecognizer {
@@ -47,10 +51,7 @@ function createMockRecognizer(type: 'whisper' | 'native' = 'native'): MockSpeech
 }
 
 // Verifies ISpeechRecognizer contract for a given implementation
-function describeISpeechRecognizerContract(
-  label: string,
-  factory: () => MockSpeechRecognizer,
-) {
+function describeISpeechRecognizerContract(label: string, factory: () => MockSpeechRecognizer) {
   describe(`ISpeechRecognizer contract — ${label}`, () => {
     let recognizer: MockSpeechRecognizer;
 

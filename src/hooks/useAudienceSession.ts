@@ -18,7 +18,11 @@ export interface UseAudienceSessionResult {
 }
 
 export function useAudienceSession(sessionCode: string): UseAudienceSessionResult {
-  const { data: session, isLoading: sessionLoading, error: sessionError } = useQuery({
+  const {
+    data: session,
+    isLoading: sessionLoading,
+    error: sessionError,
+  } = useQuery({
     queryKey: ['sessions', sessionCode],
     queryFn: () => theatricoClient.getSession(sessionCode),
     enabled: Boolean(sessionCode),

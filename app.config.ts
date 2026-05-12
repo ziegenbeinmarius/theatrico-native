@@ -31,7 +31,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#1a1a2e',
     },
-    package: 'com.theatrico.native',
+    package: 'com.theatrico.app',
   },
   web: {
     bundler: 'metro',
@@ -41,6 +41,22 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     'expo-router',
     'expo-splash-screen',
+    'expo-asset',
+    [
+      'expo-build-properties',
+      {
+        android: {
+          ndkVersion: '24.0.8215888',
+          extraProguardRules: '-keep class com.rnwhisper.** { *; }',
+        },
+      },
+    ],
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Allow Theatrico to access your microphone for live transcription.',
+      },
+    ],
     [
       'expo-camera',
       { cameraPermission: 'Allow Theatrico to access your camera to scan session QR codes.' },
@@ -52,5 +68,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: 'theatrico',
   extra: {
     BACKEND_URL: process.env.BACKEND_URL ?? '',
+    eas: {
+      projectId: '5618cd1a-3250-4354-a69a-47438eb26b54',
+    },
   },
 });

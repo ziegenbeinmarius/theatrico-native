@@ -1,8 +1,13 @@
 import type { ISpeechRecognizer, RecognitionResult, RecognizeOptions } from './ISpeechRecognizer';
 
-// @mybigday/whisper.rn types (installed separately)
 type WhisperContext = {
-  transcribe: (audioPath: string, options?: { language?: string }) => Promise<{ result: string; segments?: Array<{ text: string }> }>;
+  transcribe: (
+    audioPath: string,
+    options?: { language?: string },
+  ) => {
+    stop: () => Promise<void>;
+    promise: Promise<{ result: string; segments?: { text: string }[] }>;
+  };
   release: () => Promise<void>;
 };
 
@@ -10,27 +15,48 @@ type WhisperModule = {
   initWhisper: (options: { filePath: string }) => Promise<WhisperContext>;
 };
 
-// expo-av types (installed separately)
+type ExpoConstantsModule = {
+  default?: {
+    executionEnvironment?: 'bare' | 'standalone' | 'storeClient' | string;
+    appOwnership?: 'expo' | 'standalone' | 'guest' | string;
+  };
+};
+
+// expo-audio types are mirrored here so this class can lazy-require the native module.
 type RecordingOptions = {
+  extension: string;
+  sampleRate: number;
+  numberOfChannels: number;
+  bitRate: number;
   android: object;
-  ios: { extension: string; outputFormat: number; audioQuality: number; sampleRate: number; numberOfChannels: number; bitRate: number; linearPCMBitDepth: number; linearPCMIsBigEndian: boolean; linearPCMIsFloat: boolean };
+  ios: {
+    extension: string;
+    outputFormat: string | number;
+    audioQuality: number;
+    sampleRate: number;
+    numberOfChannels: number;
+    bitRate: number;
+    linearPCMBitDepth: number;
+    linearPCMIsBigEndian: boolean;
+    linearPCMIsFloat: boolean;
+  };
   web: object;
 };
 
 type Recording = {
-  prepareToRecordAsync: (options: RecordingOptions) => Promise<void>;
-  startAsync: () => Promise<void>;
-  stopAndUnloadAsync: () => Promise<void>;
-  getURI: () => string | null;
+  prepareToRecordAsync: (options?: Partial<RecordingOptions>) => Promise<void>;
+  record: () => void;
+  stop: () => Promise<void>;
+  uri: string | null;
 };
 
 type AudioModule = {
-  requestPermissionsAsync: () => Promise<{ granted: boolean }>;
+  requestRecordingPermissionsAsync: () => Promise<{ granted: boolean }>;
   setAudioModeAsync: (mode: object) => Promise<void>;
-  Recording: new () => Recording;
-  RecordingOptionsPresets: { HIGH_QUALITY: RecordingOptions };
-  IOSAudioQuality: { MAX: number };
-  IOSOutputFormat: { LINEARPCM: number };
+  AudioModule: { AudioRecorder: new (options: Partial<RecordingOptions>) => Recording };
+  RecordingPresets: { HIGH_QUALITY: RecordingOptions };
+  AudioQuality: { MAX: number };
+  IOSOutputFormat: { LINEARPCM: string | number };
 };
 
 const CHUNK_DURATION_MS = 2000;
@@ -94,7 +120,7 @@ export class WhisperRecognizer implements ISpeechRecognizer {
 
     if (this.recording) {
       try {
-        await this.recording.stopAndUnloadAsync();
+        await this.recording.stop();
       } catch {
         // ignore stop errors
       }
@@ -122,7 +148,7 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   private async downloadModel(url: string, onProgress?: (p: number) => void): Promise<string> {
     // Download model to app cache directory using fetch + FileSystem
     // expo-file-system is used for writing the blob to disk
-    const { FileSystem } = this.requireFileSystem();
+    const FileSystem = this.requireFileSystem();
     const fileName = url.split('/').pop() ?? 'whisper-model.bin';
     const dest = `${FileSystem.cacheDirectory}${fileName}`;
 
@@ -142,21 +168,31 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   private async startRecordingLoop(): Promise<void> {
     const Audio = this.requireAudio();
 
-    const { granted } = await Audio.requestPermissionsAsync();
+    const { granted } = await Audio.requestRecordingPermissionsAsync();
     if (!granted) throw new Error('Microphone permission denied');
 
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    await Audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
     const startChunk = async () => {
       if (!this.isRunning) return;
 
-      const rec = new Audio.Recording();
+      const rec = new Audio.AudioModule.AudioRecorder({
+        ...Audio.RecordingPresets.HIGH_QUALITY,
+        extension: '.wav',
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 256000,
+      });
       await rec.prepareToRecordAsync({
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        ...Audio.RecordingPresets.HIGH_QUALITY,
+        extension: '.wav',
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 256000,
         ios: {
           extension: '.wav',
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-          audioQuality: Audio.IOSAudioQuality.MAX,
+          audioQuality: Audio.AudioQuality.MAX,
           sampleRate: 16000,
           numberOfChannels: 1,
           bitRate: 256000,
@@ -165,19 +201,20 @@ export class WhisperRecognizer implements ISpeechRecognizer {
           linearPCMIsFloat: false,
         },
       });
-      await rec.startAsync();
+      rec.record();
       this.recording = rec;
 
       // After chunk duration, stop and transcribe
       setTimeout(async () => {
         if (!this.isRunning) return;
         try {
-          await rec.stopAndUnloadAsync();
-          const uri = rec.getURI();
+          await rec.stop();
+          const uri = rec.uri;
           if (uri && this.whisperCtx) {
-            const { result } = await this.whisperCtx.transcribe(uri, {
+            const { promise } = this.whisperCtx.transcribe(uri, {
               language: this.language,
             });
+            const { result } = await promise;
             this.emitResult({ text: result.trim(), isFinal: false });
           }
         } catch (err) {
@@ -203,17 +240,63 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   // Lazy requires so the module can be imported without crashing on platforms
   // where the native dependency is absent (e.g. web/jest).
   private requireWhisper(): WhisperModule {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('@mybigday/whisper.rn') as WhisperModule;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('whisper.rn') as Partial<WhisperModule>;
+      if (typeof mod?.initWhisper !== 'function') {
+        throw new Error(this.getWhisperUnavailableMessage());
+      }
+      return mod as WhisperModule;
+    } catch (error) {
+      if (error instanceof Error) {
+        const msg = error.message ?? '';
+        if (
+          msg.includes('getConstants') ||
+          msg.includes('NativeModule') ||
+          msg.includes('Cannot find module')
+        ) {
+          throw new Error(this.getWhisperUnavailableMessage());
+        }
+      }
+      throw error;
+    }
+  }
+
+  private getWhisperUnavailableMessage(): string {
+    if (this.isRunningInExpoGo()) {
+      return 'Whisper is unavailable in Expo Go. Use a development build and reinstall the app.';
+    }
+    return 'Whisper native module is not available. Rebuild/reinstall the app so native modules are linked.';
+  }
+
+  private isRunningInExpoGo(): boolean {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const constants = require('expo-constants') as ExpoConstantsModule;
+      const env = constants?.default?.executionEnvironment;
+      const ownership = constants?.default?.appOwnership;
+      return env === 'storeClient' || ownership === 'expo';
+    } catch {
+      return false;
+    }
   }
 
   private requireAudio(): AudioModule {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-av').Audio as AudioModule;
+    return require('expo-audio') as AudioModule;
   }
 
-  private requireFileSystem(): { FileSystem: { cacheDirectory: string; getInfoAsync: (p: string) => Promise<{ exists: boolean }>; createDownloadResumable: (url: string, dest: string, opts: object, cb: (p: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => void) => { downloadAsync: () => Promise<void> } } } {
+  private requireFileSystem(): {
+    cacheDirectory: string;
+    getInfoAsync: (p: string) => Promise<{ exists: boolean }>;
+    createDownloadResumable: (
+      url: string,
+      dest: string,
+      opts: object,
+      cb: (p: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => void,
+    ) => { downloadAsync: () => Promise<unknown> };
+  } {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-file-system') as ReturnType<typeof this.requireFileSystem>;
+    return require('expo-file-system/legacy') as ReturnType<typeof this.requireFileSystem>;
   }
 }

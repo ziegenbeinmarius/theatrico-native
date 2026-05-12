@@ -1,38 +1,44 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ISpeechRecognizer } from '@/services/speech/ISpeechRecognizer';
 import { createSpeechRecognizer } from '@/services/speech/SpeechRecognizerFactory';
-
-const STORAGE_KEY = '@theatrico/speech_recognizer_type';
+import { useSettings, WHISPER_MODEL_URLS } from '@/context/SettingsContext';
 
 interface SpeechRecognizerContextValue {
   recognizer: ISpeechRecognizer;
-  switchRecognizer: (type: 'whisper' | 'native') => Promise<void>;
+  switchRecognizer: (type: 'whisper' | 'native') => void;
 }
 
 const SpeechRecognizerContext = createContext<SpeechRecognizerContextValue | null>(null);
 
+function buildRecognizer(
+  preference: 'whisper' | 'native',
+  modelSize: keyof typeof WHISPER_MODEL_URLS,
+): ISpeechRecognizer {
+  if (preference === 'whisper') {
+    return createSpeechRecognizer('whisper', {
+      modelUrl: WHISPER_MODEL_URLS[modelSize].url,
+    });
+  }
+  return createSpeechRecognizer('native');
+}
+
 export function SpeechRecognizerProvider({ children }: { children: React.ReactNode }) {
+  const { settings, updateSettings } = useSettings();
+
   const [recognizer, setRecognizer] = useState<ISpeechRecognizer>(() =>
-    createSpeechRecognizer('native'),
+    buildRecognizer(settings.recognizerPreference, settings.whisperModelSize),
   );
-  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    setRecognizer(buildRecognizer(settings.recognizerPreference, settings.whisperModelSize));
+  }, [settings.recognizerPreference, settings.whisperModelSize]);
 
-    AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
-      if (saved === 'whisper' || saved === 'native') {
-        setRecognizer(createSpeechRecognizer(saved));
-      }
-    });
-  }, []);
-
-  const switchRecognizer = useCallback(async (type: 'whisper' | 'native') => {
-    await AsyncStorage.setItem(STORAGE_KEY, type);
-    setRecognizer(createSpeechRecognizer(type));
-  }, []);
+  const switchRecognizer = useCallback(
+    (type: 'whisper' | 'native') => {
+      updateSettings({ recognizerPreference: type });
+    },
+    [updateSettings],
+  );
 
   return (
     <SpeechRecognizerContext.Provider value={{ recognizer, switchRecognizer }}>

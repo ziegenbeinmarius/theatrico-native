@@ -92,9 +92,7 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {createError ? (
-          <Text className="text-[13px] text-app-accent">{createError}</Text>
-        ) : null}
+        {createError ? <Text className="text-[13px] text-app-accent">{createError}</Text> : null}
 
         <Pressable
           className={`bg-app-accent rounded-xl py-[14px] items-center ${

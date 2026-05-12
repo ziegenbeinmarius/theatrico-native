@@ -1,4 +1,4 @@
-import { requireNativeModule, EventEmitter } from 'expo-modules-core';
+import { requireNativeModule, NativeModule } from 'expo-modules-core';
 
 export interface NativeSpeechResult {
   text: string;
@@ -11,7 +11,12 @@ export interface NativeSpeechError {
   message: string;
 }
 
-export interface NativeSpeechModuleType {
+type NativeSpeechModuleEvents = {
+  onResult(event: NativeSpeechResult): void;
+  onError(event: NativeSpeechError): void;
+};
+
+export declare class NativeSpeechModuleType extends NativeModule<NativeSpeechModuleEvents> {
   requestPermissionsAsync(): Promise<boolean>;
   startRecognition(language: string, contextHint: string): Promise<void>;
   stopRecognition(): Promise<void>;
@@ -19,6 +24,6 @@ export interface NativeSpeechModuleType {
 
 const NativeSpeechModule = requireNativeModule<NativeSpeechModuleType>('NativeSpeech');
 
-export const NativeSpeechEmitter = new EventEmitter(NativeSpeechModule as unknown as Parameters<typeof EventEmitter>[0]);
+export const NativeSpeechEmitter = NativeSpeechModule;
 
 export default NativeSpeechModule;

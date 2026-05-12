@@ -26,7 +26,7 @@ function useModelDownload(
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const cancelledRef = useRef(false);
-  const taskRef = useRef<{ cancel?: () => void } | null>(null);
+  const taskRef = useRef<{ pauseAsync?: () => Promise<void> } | null>(null);
 
   useEffect(() => {
     if (!active) {
@@ -48,7 +48,7 @@ function useModelDownload(
 
     // Lazy require expo-file-system to stay compatible with web/jest
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const FileSystem = require('expo-file-system') as {
+    const FileSystem = require('expo-file-system/legacy') as {
       cacheDirectory: string;
       getInfoAsync: (p: string) => Promise<{ exists: boolean }>;
       createDownloadResumable: (
@@ -56,7 +56,7 @@ function useModelDownload(
         dest: string,
         opts: object,
         cb: (p: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => void,
-      ) => { downloadAsync: () => Promise<void>; pauseAsync?: () => void };
+      ) => { downloadAsync: () => Promise<unknown>; pauseAsync?: () => Promise<void> };
     };
 
     const dest = `${FileSystem.cacheDirectory}${fileName}`;
@@ -93,6 +93,7 @@ function useModelDownload(
 
   const cancel = () => {
     cancelledRef.current = true;
+    void taskRef.current?.pauseAsync?.();
     setState('idle');
     setProgress(0);
   };
@@ -134,6 +135,7 @@ export function ModelDownloadSheet({
       const timer = setTimeout(onDownloadComplete, 500);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [state, onDownloadComplete]);
 
   const progressWidth = `${Math.round(progress * 100)}%`;
@@ -156,9 +158,7 @@ export function ModelDownloadSheet({
         {/* Handle */}
         <View className="self-center w-10 h-1 bg-app-subtle rounded-full mb-5" />
 
-        <Text className="text-app-text text-lg font-bold mb-1">
-          Download Whisper Model
-        </Text>
+        <Text className="text-app-text text-lg font-bold mb-1">Download Whisper Model</Text>
         <Text className="text-app-muted text-[13px] mb-5">
           {`${modelSize.charAt(0).toUpperCase() + modelSize.slice(1)} model · ${modelInfo.sizeLabel} · ~${modelInfo.estimatedSeconds}s on Wi-Fi`}
         </Text>

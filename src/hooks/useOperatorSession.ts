@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import {
+  AudioModule,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  type AudioRecorder,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { theatricoClient } from '@/services/api/theatricoClient';
 import { createSessionWebSocket } from '@/services/api/websocket/SessionWebSocket';
 import { createAudioWebSocket } from '@/services/api/websocket/AudioWebSocket';
 import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
-import type { IAudioWebSocket, ISessionWebSocket, Play, Position, Session, SessionMessage, SessionStatus } from '@/domain';
+import type {
+  IAudioWebSocket,
+  ISessionWebSocket,
+  Play,
+  Position,
+  Session,
+  SessionMessage,
+  SessionStatus,
+} from '@/domain';
 import { flattenLines, findLineIndex } from '@/lib/scriptUtils';
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -48,7 +62,11 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 export function useOperatorSession(sessionCode: string): UseOperatorSessionResult {
   const { recognizer } = useSpeechRecognizerContext();
 
-  const { data: session, isLoading: sessionLoading, error: sessionError } = useQuery({
+  const {
+    data: session,
+    isLoading: sessionLoading,
+    error: sessionError,
+  } = useQuery({
     queryKey: ['sessions', sessionCode],
     queryFn: () => theatricoClient.getSession(sessionCode),
     enabled: Boolean(sessionCode),
@@ -77,7 +95,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
   const sessionWsRef = useRef<ISessionWebSocket | null>(null);
   const audioWsRef = useRef<IAudioWebSocket | null>(null);
-  const audioRecordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecordingRef = useRef<AudioRecorder | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const transcriptCounterRef = useRef(0);
@@ -104,7 +122,10 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
         setTranscriptItems((prev) => {
           const lastItem = prev[prev.length - 1];
           if (!msg.isFinal && lastItem && !lastItem.isFinal) {
-            return [...prev.slice(0, -1), { id, text: msg.text, isFinal: false, timestamp: Date.now() }];
+            return [
+              ...prev.slice(0, -1),
+              { id, text: msg.text, isFinal: false, timestamp: Date.now() },
+            ];
           }
           return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
         });
@@ -138,7 +159,10 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       setTranscriptItems((prev) => {
         const lastItem = prev[prev.length - 1];
         if (!result.isFinal && lastItem && !lastItem.isFinal) {
-          return [...prev.slice(0, -1), { id, text: result.text, isFinal: false, timestamp: Date.now() }];
+          return [
+            ...prev.slice(0, -1),
+            { id, text: result.text, isFinal: false, timestamp: Date.now() },
+          ];
         }
         return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
       });
@@ -149,16 +173,17 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const captureChunk = useCallback(async () => {
     if (!isRecordingRef.current) return;
     try {
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
+      // eslint-disable-next-line import/namespace
+      const recording = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      await recording.prepareToRecordAsync();
+      recording.record();
       audioRecordingRef.current = recording;
 
       chunkTimerRef.current = setTimeout(async () => {
         chunkTimerRef.current = null;
         try {
-          await recording.stopAndUnloadAsync();
-          const uri = recording.getURI();
+          await recording.stop();
+          const uri = recording.uri;
           if (uri && isRecordingRef.current) {
             const b64 = await FileSystem.readAsStringAsync(uri, {
               encoding: FileSystem.EncodingType.Base64,
@@ -180,12 +205,12 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   }, []);
 
   const startRecording = useCallback(async () => {
-    const { granted } = await Audio.requestPermissionsAsync();
+    const { granted } = await requestRecordingPermissionsAsync();
     if (!granted) throw new Error('Microphone permission denied');
 
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
     });
 
     await recognizer.start({ language: 'en-US' });
@@ -205,7 +230,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
     try {
       if (audioRecordingRef.current) {
-        await audioRecordingRef.current.stopAndUnloadAsync();
+        await audioRecordingRef.current.stop();
         audioRecordingRef.current = null;
       }
     } catch {}
