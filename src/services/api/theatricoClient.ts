@@ -2,14 +2,8 @@ import { config } from '@/lib/config';
 import type { ITheatricoClient, Play, Position, Session, SessionStatus } from '@/domain';
 
 class TheatricoClient implements ITheatricoClient {
-  private readonly base: string;
-
-  constructor(base: string) {
-    this.base = base;
-  }
-
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, {
+    const res = await fetch(`${config.backendUrl}${path}`, {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
       ...init,
     });
@@ -49,4 +43,4 @@ class TheatricoClient implements ITheatricoClient {
   }
 }
 
-export const theatricoClient: ITheatricoClient = new TheatricoClient(config.backendUrl);
+export const theatricoClient: ITheatricoClient = new TheatricoClient();
