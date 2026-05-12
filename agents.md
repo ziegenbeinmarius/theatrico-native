@@ -175,6 +175,105 @@ Singleton `QueryClient` with `retry: 2` and `staleTime: 30 s`. Wrapped around th
 
 Both hooks return the full React Query result object (`data`, `isLoading`, `error`, etc.).
 
+## Speech Recognition
+
+The speech recognition layer follows the strategy pattern: a common `ISpeechRecognizer` interface with two pluggable implementations, switchable at runtime without interrupting the session.
+
+### Core types (`src/services/speech/ISpeechRecognizer.ts`)
+
+| Type | Description |
+|------|-------------|
+| `RecognizeOptions` | `{ language?: string; contextHint?: string }` passed to `start()` |
+| `RecognitionResult` | `{ text: string; isFinal: boolean; confidence?: number }` emitted by `onResult` |
+| `ISpeechRecognizer` | Contract interface (see below) |
+
+```ts
+interface ISpeechRecognizer {
+  readonly type: 'whisper' | 'native';
+  start(options: RecognizeOptions): Promise<void>;
+  stop(): Promise<void>;
+  onResult(cb: (result: RecognitionResult) => void): () => void;  // returns unsubscribe
+  onError(cb: (err: Error) => void): () => void;                  // returns unsubscribe
+}
+```
+
+### WhisperRecognizer (`src/services/speech/WhisperRecognizer.ts`)
+
+On-device transcription via `@mybigday/whisper.rn` (whisper.cpp bindings):
+
+- **Model loading** — accepts `modelPath` (local file) or `modelUrl` (downloads to `FileSystem.cacheDirectory`). Supports a `onProgress` callback for download progress. Skips re-download when the file already exists.
+- **Audio capture** — uses `expo-av` (`Audio.Recording`) at 16 kHz mono PCM. Each recording chunk is `CHUNK_DURATION_MS` (2 s) long and overlaps with the next by `OVERLAP_MS` (500 ms).
+- **Transcription** — each chunk's `.wav` file is fed to `whisperCtx.transcribe()`. Results are emitted as partial (`isFinal: false`) results. The recognizer does **not** emit a final result automatically; callers should call `stop()` when done.
+- **Native deps** are lazy-required at runtime so the class can be imported in Jest/web without crashing.
+
+### NativeRecognizer (`src/services/speech/NativeRecognizer.ts`)
+
+Wraps the `NativeSpeech` Expo module (see `modules/native-speech/`) which talks to Apple's `SFSpeechRecognizer`:
+
+- Calls `requestPermissionsAsync()` before starting (throws if denied).
+- Subscribes to `onResult` / `onError` events from `NativeSpeechEmitter`.
+- Cleans up listeners on `stop()`.
+- Native module is lazy-required for web/test compat.
+
+### NativeSpeech Expo Module (`modules/native-speech/`)
+
+| File | Purpose |
+|------|---------|
+| `index.ts` | Public re-exports |
+| `src/NativeSpeechModule.ts` | `requireNativeModule` binding + `EventEmitter` |
+| `ios/NativeSpeechModule.swift` | Swift implementation |
+
+**Swift implementation** (`NativeSpeechModule.swift`):
+- Uses `SFSpeechAudioBufferRecognitionRequest` with `shouldReportPartialResults = true`.
+- Optionally injects `contextualStrings` from `contextHint` to improve domain accuracy.
+- Installs an `AVAudioEngine` tap on the input node and feeds buffers directly to the recognition request — zero-copy streaming.
+- **60s session limit** — Apple enforces ~60 s per recognition task. The module uses a `Timer` firing every 50 s to swap out the recognition request and start a fresh task while the audio engine keeps running, providing seamless continuation.
+- Emits `onResult` events with `{ text, isFinal, confidence }` and `onError` events with `{ code, message }`.
+
+### SpeechRecognizerFactory (`src/services/speech/SpeechRecognizerFactory.ts`)
+
+```ts
+createSpeechRecognizer(type: 'whisper' | 'native'): ISpeechRecognizer
+```
+
+Returns the appropriate concrete implementation. Add new implementations here when extending the strategy.
+
+### SpeechRecognizerContext (`src/context/SpeechRecognizerContext.tsx`)
+
+React context that holds the active recognizer instance and handles runtime hot-swapping:
+
+- Default impl on mount: `native`.
+- On first render, reads `@theatrico/speech_recognizer_type` from `AsyncStorage` and switches if a previous selection exists.
+- `switchRecognizer(type)` persists the choice to AsyncStorage and replaces the recognizer in state. Any component holding a ref to the old recognizer should call `stop()` first.
+
+Wrap the app (or a subtree) with `<SpeechRecognizerProvider>`:
+
+```tsx
+// app/_layout.tsx
+<SpeechRecognizerProvider>
+  <Stack />
+</SpeechRecognizerProvider>
+```
+
+### useSpeechRecognizer hook (`src/hooks/useSpeechRecognizer.ts`)
+
+```ts
+const { recognizer, switchRecognizer } = useSpeechRecognizer();
+```
+
+Convenience wrapper around `useSpeechRecognizerContext`. Throws if used outside `SpeechRecognizerProvider`.
+
+### Unit tests (`src/__tests__/services/speech/ISpeechRecognizer.test.ts`)
+
+Contract tests verify the `ISpeechRecognizer` interface against both mock implementations (whisper + native). They test:
+- `type` discriminant value
+- `start()` / `stop()` lifecycle
+- `onResult` / `onError` subscribe + unsubscribe
+- Multiple simultaneous listeners
+- Optional `confidence` in `RecognitionResult`
+
+Run with: `npm test`
+
 ## Development
 
 ```bash
@@ -184,4 +283,5 @@ npm run ios          # Run on iOS simulator
 npm run lint         # Lint with ESLint
 npm run typecheck    # Type-check with tsc
 npm run format       # Auto-format with Prettier
+npm test             # Run Jest unit tests
 ```
