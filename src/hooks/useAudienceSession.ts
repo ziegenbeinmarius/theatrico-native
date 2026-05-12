@@ -28,15 +28,11 @@ export function useAudienceSession(sessionCode: string): UseAudienceSessionResul
     enabled: Boolean(sessionCode),
   });
 
-  const { data: plays, isLoading: playsLoading } = useQuery({
-    queryKey: ['plays'],
-    queryFn: () => theatricoClient.listPlays(),
-    enabled: Boolean(session),
-  });
-
-  const play = plays?.find((p) => p.id === session?.playId) ?? null;
+  // getSession returns the full play embedded in session.play — use it directly
+  // rather than fetching the slim play list (which lacks acts/scenes/lines).
+  const play = session?.play ?? null;
   const flatLines = play ? flattenLines(play) : [];
-  const isLoading = sessionLoading || playsLoading;
+  const isLoading = sessionLoading;
   const error = sessionError instanceof Error ? sessionError : null;
 
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);

@@ -1,9 +1,49 @@
 import { config } from '@/lib/config';
-import type { ISessionWebSocket, SessionMessage } from '@/domain';
+import type { ISessionWebSocket, Position, SessionMessage } from '@/domain';
 
 const BASE_RECONNECT_DELAY_MS = 500;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+
+// The backend sends position_update as {act, scene, line} (integer indices).
+// Translate to domain Position using the same ID scheme as theatricoClient.
+function buildPosition(act: number, scene: number, line: number): Position {
+  return {
+    playId: '',
+    actId: `act-${act}`,
+    sceneId: `act-${act}-scene-${scene}`,
+    lineId: String(line),
+  };
+}
+
+function normalizeBackendMessage(raw: Record<string, unknown>): SessionMessage | null {
+  if (raw.type === 'position_update' && typeof raw.line === 'number') {
+    return {
+      type: 'position_update',
+      position: buildPosition(
+        typeof raw.act === 'number' ? raw.act : 0,
+        typeof raw.scene === 'number' ? raw.scene : 0,
+        raw.line,
+      ),
+    };
+  }
+  if (raw.type === 'transcript') {
+    return {
+      type: 'transcript',
+      text: typeof raw.text === 'string' ? raw.text : '',
+      isFinal: typeof raw.isFinal === 'boolean' ? raw.isFinal : true,
+      timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : new Date().toISOString(),
+    };
+  }
+  if (raw.type === 'error') {
+    return {
+      type: 'error',
+      code: typeof raw.code === 'string' ? raw.code : 'unknown',
+      message: typeof raw.message === 'string' ? raw.message : 'Unknown error',
+    };
+  }
+  return null;
+}
 
 export class SessionWebSocket implements ISessionWebSocket {
   private readonly url: string;
@@ -73,8 +113,9 @@ export class SessionWebSocket implements ISessionWebSocket {
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data as string) as SessionMessage;
-        this.handlers.forEach((h) => h(msg));
+        const raw = JSON.parse(event.data as string) as Record<string, unknown>;
+        const msg = normalizeBackendMessage(raw);
+        if (msg) this.handlers.forEach((h) => h(msg));
       } catch {
         // Ignore malformed messages
       }
