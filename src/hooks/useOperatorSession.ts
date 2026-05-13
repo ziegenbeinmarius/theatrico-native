@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  AudioModule,
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  type AudioRecorder,
-} from 'expo-audio';
-import * as FileSystem from 'expo-file-system/legacy';
+import { requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import { theatricoClient } from '@/services/api/theatricoClient';
 import { createSessionWebSocket } from '@/services/api/websocket/SessionWebSocket';
-import { createAudioWebSocket } from '@/services/api/websocket/AudioWebSocket';
 import { createOperatorWebSocket, type OperatorWebSocket } from '@/services/api/websocket/OperatorWebSocket';
 import { useSpeechRecognizerContext } from '@/context/SpeechRecognizerContext';
 import type {
-  IAudioWebSocket,
   ISessionWebSocket,
   Play,
   Position,
@@ -49,17 +40,6 @@ export interface UseOperatorSessionResult {
   moveNext: () => Promise<void>;
 }
 
-const CHUNK_DURATION_MS = 3000;
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binaryStr = atob(base64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
 export function useOperatorSession(sessionCode: string): UseOperatorSessionResult {
   const { recognizer } = useSpeechRecognizerContext();
 
@@ -82,7 +62,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('connecting');
 
-  // Only sync initial position from session; use lineId string to avoid resetting on every refetch
+  // Only sync initial position from session on first load (lineId string guards against refetch resets)
   useEffect(() => {
     if (session?.currentPosition) {
       setCurrentPosition(session.currentPosition);
@@ -90,32 +70,25 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
   }, [session?.currentPosition?.lineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionWsRef = useRef<ISessionWebSocket | null>(null);
-  const audioWsRef = useRef<IAudioWebSocket | null>(null);
   const operatorWsRef = useRef<OperatorWebSocket | null>(null);
-  const audioRecordingRef = useRef<AudioRecorder | null>(null);
-  const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isRecordingRef = useRef(false);
   const transcriptCounterRef = useRef(0);
 
-  // Refs so the recognizer callback always sees the latest play/position without stale closure
+  // Refs so callbacks always see the latest values without stale closures
   const flatLinesRef = useRef<ReturnType<typeof flattenLines>>([]);
-  const currentPositionRef = useRef<typeof currentPosition>(currentPosition);
-  const sessionCodeRef = useRef(sessionCode);
+  const currentPositionRef = useRef<Position | null>(currentPosition);
 
   useEffect(() => { currentPositionRef.current = currentPosition; }, [currentPosition]);
-  useEffect(() => { sessionCodeRef.current = sessionCode; }, [sessionCode]);
   useEffect(() => {
     flatLinesRef.current = play ? flattenLines(play) : [];
   }, [play]);
 
+  // Session + operator WebSocket connections
   useEffect(() => {
     if (!sessionCode) return;
 
     const sessionWs = createSessionWebSocket(sessionCode);
-    const audioWs = createAudioWebSocket(sessionCode);
     const operatorWs = createOperatorWebSocket(sessionCode);
     sessionWsRef.current = sessionWs;
-    audioWsRef.current = audioWs;
     operatorWsRef.current = operatorWs;
 
     setWsStatus('connecting');
@@ -126,7 +99,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
 
     const handleMessage = (msg: SessionMessage) => {
       if (msg.type === 'position_update') {
-        // Backend sends { type, line: seqIdx } — convert seqIdx to our Position type
+        // Backend sends { type, line: seqIdx } — convert to our Position type
         if (typeof msg.line === 'number') {
           const matched = flatLinesRef.current[msg.line];
           if (matched) setCurrentPosition(matched.position);
@@ -138,10 +111,7 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
         setTranscriptItems((prev) => {
           const lastItem = prev[prev.length - 1];
           if (!msg.isFinal && lastItem && !lastItem.isFinal) {
-            return [
-              ...prev.slice(0, -1),
-              { id, text: msg.text, isFinal: false, timestamp: Date.now() },
-            ];
+            return [...prev.slice(0, -1), { id, text: msg.text, isFinal: false, timestamp: Date.now() }];
           }
           return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
         });
@@ -155,7 +125,6 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
     sessionWs.onClose(handleClose);
     sessionWs.onGiveUp(handleGiveUp);
     sessionWs.connect();
-    audioWs.connect();
     operatorWs.connect();
 
     return () => {
@@ -164,119 +133,62 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       sessionWs.offClose(handleClose);
       sessionWs.offGiveUp(handleGiveUp);
       sessionWs.disconnect();
-      audioWs.disconnect();
       operatorWs.disconnect();
       sessionWsRef.current = null;
-      audioWsRef.current = null;
       operatorWsRef.current = null;
     };
   }, [sessionCode]);
 
+  // Local transcription → match against script → advance position
   useEffect(() => {
     const unsub = recognizer.onResult((result) => {
       const id = String(++transcriptCounterRef.current);
       setTranscriptItems((prev) => {
         const lastItem = prev[prev.length - 1];
         if (!result.isFinal && lastItem && !lastItem.isFinal) {
-          return [
-            ...prev.slice(0, -1),
-            { id, text: result.text, isFinal: false, timestamp: Date.now() },
-          ];
+          return [...prev.slice(0, -1), { id, text: result.text, isFinal: false, timestamp: Date.now() }];
         }
         return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
       });
 
-      if (result.isFinal) {
-        const lines = flatLinesRef.current;
-        const pos = currentPositionRef.current;
-        const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
-        const matchIdx = matchTranscriptToScript(result.text, lines, currentIdx);
-        if (matchIdx >= 0) {
-          const matched = lines[matchIdx];
-          if (matched) {
-            setCurrentPosition(matched.position);
-            theatricoClient
-              .updatePosition(sessionCodeRef.current, matched.position)
-              .catch(() => {});
-          }
+      // WhisperRecognizer keeps isFinal=false throughout the session (isCapturing stays true),
+      // so match on every result. Guard by matchIdx > currentIdx to only advance forward
+      // and skip re-firing on the same line during rolling interim updates.
+      const lines = flatLinesRef.current;
+      const currentIdx = currentPositionRef.current
+        ? findLineIndex(lines, currentPositionRef.current.lineId)
+        : -1;
+      const matchIdx = matchTranscriptToScript(result.text, lines, Math.max(0, currentIdx));
+      if (matchIdx >= 0 && matchIdx > currentIdx) {
+        const matched = lines[matchIdx];
+        if (matched) {
+          currentPositionRef.current = matched.position; // update immediately to block duplicate fires
+          setCurrentPosition(matched.position);
+          operatorWsRef.current?.forcePosition(matchIdx);
         }
-        // Trigger immediate backend transcription so both paths stay in sync.
-        audioWsRef.current?.sendFlush();
       }
     });
     return unsub;
   }, [recognizer]);
 
-  const captureChunk = useCallback(async () => {
-    if (!isRecordingRef.current) return;
-    try {
-      // eslint-disable-next-line import/namespace
-      const recording = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
-      await recording.prepareToRecordAsync();
-      recording.record();
-      audioRecordingRef.current = recording;
-
-      chunkTimerRef.current = setTimeout(async () => {
-        chunkTimerRef.current = null;
-        try {
-          await recording.stop();
-          const uri = recording.uri;
-          if (uri && isRecordingRef.current) {
-            const b64 = await FileSystem.readAsStringAsync(uri, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
-            audioWsRef.current?.sendAudioChunk(base64ToArrayBuffer(b64));
-          }
-        } catch {
-          // Swallow chunk errors; pipeline continues
-        }
-        if (isRecordingRef.current) {
-          void captureChunk();
-        }
-      }, CHUNK_DURATION_MS);
-    } catch {
-      if (isRecordingRef.current) {
-        chunkTimerRef.current = setTimeout(() => void captureChunk(), 500);
-      }
-    }
-  }, []);
-
   const startRecording = useCallback(async () => {
     const { granted } = await requestRecordingPermissionsAsync();
     if (!granted) throw new Error('Microphone permission denied');
 
-    await setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-    });
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
     const lines = flatLinesRef.current;
-    const pos = currentPositionRef.current;
-    const currentIdx = pos ? findLineIndex(lines, pos.lineId) : 0;
-    const contextHint = buildContextHint(lines, currentIdx);
+    const currentIdx = currentPositionRef.current
+      ? findLineIndex(lines, currentPositionRef.current.lineId)
+      : 0;
+    const contextHint = buildContextHint(lines, currentIdx, 4);
 
     await recognizer.start({ language: 'en', contextHint });
-    isRecordingRef.current = true;
     setIsRecording(true);
-    void captureChunk();
-  }, [recognizer, captureChunk]);
+  }, [recognizer]);
 
   const stopRecording = useCallback(async () => {
-    isRecordingRef.current = false;
     setIsRecording(false);
-
-    if (chunkTimerRef.current !== null) {
-      clearTimeout(chunkTimerRef.current);
-      chunkTimerRef.current = null;
-    }
-
-    try {
-      if (audioRecordingRef.current) {
-        await audioRecordingRef.current.stop();
-        audioRecordingRef.current = null;
-      }
-    } catch {}
-
     try {
       await recognizer.stop();
     } catch {}

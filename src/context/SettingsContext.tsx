@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setBackendUrl } from '@/lib/config';
 
@@ -54,8 +55,10 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   backendUrl: 'https://theatrico.fly.dev',
-  recognizerPreference: 'whisper',
-  whisperModelSize: 'base',
+  // Native SFSpeechRecognizer on iOS: ~100-300ms word-level streaming — right for cues.
+  // Whisper on Android: no native streaming equivalent; falls back to 2s slice inference.
+  recognizerPreference: Platform.OS === 'ios' ? 'native' : 'whisper',
+  whisperModelSize: 'tiny',
   language: 'en',
 };
 
