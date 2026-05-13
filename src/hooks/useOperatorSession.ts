@@ -110,10 +110,13 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
         const id = String(++transcriptCounterRef.current);
         setTranscriptItems((prev) => {
           const lastItem = prev[prev.length - 1];
-          if (!msg.isFinal && lastItem && !lastItem.isFinal) {
-            return [...prev.slice(0, -1), { id, text: msg.text, isFinal: false, timestamp: Date.now() }];
-          }
-          return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
+          const next = (() => {
+            if (!msg.isFinal && lastItem && !lastItem.isFinal) {
+              return [...prev.slice(0, -1), { id, text: msg.text, isFinal: false, timestamp: Date.now() }];
+            }
+            return [...prev, { id, text: msg.text, isFinal: msg.isFinal, timestamp: Date.now() }];
+          })();
+          return next.length > 5 ? next.slice(-5) : next;
         });
       } else if (msg.type === 'error') {
         setWsStatus('disconnected');
@@ -145,10 +148,13 @@ export function useOperatorSession(sessionCode: string): UseOperatorSessionResul
       const id = String(++transcriptCounterRef.current);
       setTranscriptItems((prev) => {
         const lastItem = prev[prev.length - 1];
-        if (!result.isFinal && lastItem && !lastItem.isFinal) {
-          return [...prev.slice(0, -1), { id, text: result.text, isFinal: false, timestamp: Date.now() }];
-        }
-        return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
+        const next = (() => {
+          if (!result.isFinal && lastItem && !lastItem.isFinal) {
+            return [...prev.slice(0, -1), { id, text: result.text, isFinal: false, timestamp: Date.now() }];
+          }
+          return [...prev, { id, text: result.text, isFinal: result.isFinal, timestamp: Date.now() }];
+        })();
+        return next.length > 5 ? next.slice(-5) : next;
       });
 
       // WhisperRecognizer keeps isFinal=false throughout the session (isCapturing stays true),

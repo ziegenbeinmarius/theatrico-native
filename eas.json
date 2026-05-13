@@ -13,6 +13,16 @@
         "BACKEND_URL": "https://theatrico.fly.dev"
       }
     },
+    "development-device": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "BACKEND_URL": "https://theatrico.fly.dev"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "ios": {

@@ -1,46 +1,5 @@
 import type { ISpeechRecognizer, RecognitionResult, RecognizeOptions } from './ISpeechRecognizer';
 
-type TranscribeRealtimeEvent = {
-  isCapturing: boolean;
-  data?: { result: string };
-  error?: string;
-};
-
-type WhisperContext = {
-  transcribeRealtime: (options?: {
-    language?: string;
-    prompt?: string;
-    // Inference speed
-    temperature?: number;
-    beamSize?: number;
-    bestOf?: number;
-    maxLen?: number;
-    maxThreads?: number;
-    // Realtime slicing
-    realtimeAudioSec?: number;
-    realtimeAudioSliceSec?: number;
-    realtimeAudioMinSec?: number;
-    // VAD
-    useVad?: boolean;
-    vadMs?: number;
-    vadThold?: number;
-    vadFreqThold?: number;
-  }) => Promise<{
-    stop: () => Promise<void>;
-    subscribe: (callback: (event: TranscribeRealtimeEvent) => void) => void;
-  }>;
-  release: () => Promise<void>;
-};
-
-type WhisperModule = {
-  initWhisper: (options: {
-    filePath: string;
-    useGpu?: boolean;
-    useFlashAttn?: boolean;
-    useCoreMLIos?: boolean;
-  }) => Promise<WhisperContext>;
-};
-
 type ExpoConstantsModule = {
   default?: {
     executionEnvironment?: string;
@@ -54,16 +13,42 @@ export interface WhisperModelOptions {
   onProgress?: (progress: number) => void;
 }
 
+type WhisperModule = {
+  initWhisper: (options: {
+    filePath: string;
+    useGpu?: boolean;
+    useFlashAttn?: boolean;
+    useCoreMLIos?: boolean;
+  }) => Promise<unknown>;
+};
+
+type RealtimeTranscriberModule = {
+  RealtimeTranscriber: new (
+    deps: { whisperContext: unknown; audioStream: unknown },
+    options?: object,
+    callbacks?: {
+      onTranscribe?: (event: { type: string; data?: { result?: string }; isCapturing: boolean }) => void;
+      onError?: (error: string) => void;
+    },
+  ) => {
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    release: () => Promise<void>;
+  };
+};
+
+type AudioPcmStreamAdapterModule = {
+  AudioPcmStreamAdapter: new () => unknown;
+};
+
 export class WhisperRecognizer implements ISpeechRecognizer {
   readonly type = 'whisper' as const;
 
   private resultListeners: Set<(r: RecognitionResult) => void> = new Set();
   private errorListeners: Set<(e: Error) => void> = new Set();
-  private whisperCtx: WhisperContext | null = null;
-  private stopRealtime: (() => Promise<void>) | null = null;
+  private whisperCtx: unknown = null;
+  private transcriber: { start: () => Promise<void>; stop: () => Promise<void>; release: () => Promise<void> } | null = null;
   private isRunning = false;
-  private language: string | undefined;
-  private contextHint: string | undefined;
   private readonly modelOptions: WhisperModelOptions;
 
   constructor(modelOptions: WhisperModelOptions = {}) {
@@ -82,48 +67,51 @@ export class WhisperRecognizer implements ISpeechRecognizer {
 
   async start(options: RecognizeOptions): Promise<void> {
     if (this.isRunning) return;
-    this.language = options.language;
-    this.contextHint = options.contextHint;
     this.isRunning = true;
 
     try {
       await this.ensureModel();
 
-      const { stop, subscribe } = await this.whisperCtx!.transcribeRealtime({
-        language: this.language,
-        prompt: this.contextHint,
-        // Greedy decoding — skips beam search and candidate sampling.
-        // With a context prompt guiding the output, accuracy loss is minimal and
-        // inference is 2-3× faster than the default beam-search mode.
-        temperature: 0,
-        beamSize: 1,
-        bestOf: 1,
-        // 2s clips hold ~10-15 words; cap decoder output to match.
-        maxLen: 80,
-        realtimeAudioSec: 300,
-        // 2s slices: shortest practical size for whisper.cpp.
-        // Each slice fires inference immediately on completion (~150ms for tiny+GPU),
-        // giving ~2.2s end-to-end latency — best achievable with Whisper on device.
-        realtimeAudioSliceSec: 2,
-        realtimeAudioMinSec: 1,
-        useVad: true,
-        vadMs: 2000,    // minimum 2s per VAD window (API lower limit)
-        vadThold: 0.6,  // energy threshold; lower = more sensitive
-      });
+      const { RealtimeTranscriber } = this.requireRealtimeTranscriber();
+      const { AudioPcmStreamAdapter } = this.requireAudioPcmStreamAdapter();
 
-      this.stopRealtime = stop;
+      const audioStream = new AudioPcmStreamAdapter();
 
-      subscribe((event) => {
-        if (!this.isRunning) return;
-        if (event.error) {
-          this.emitError(new Error(event.error));
-          return;
-        }
-        const text = event.data?.result?.trim();
-        if (text) {
-          this.emitResult({ text, isFinal: !event.isCapturing });
-        }
-      });
+      this.transcriber = new RealtimeTranscriber(
+        { whisperContext: this.whisperCtx, audioStream },
+        {
+          audioSliceSec: 2,
+          audioMinSec: 1,
+          initialPrompt: options.contextHint,
+          transcribeOptions: {
+            language: options.language,
+            temperature: 0,
+            beamSize: 1,
+            bestOf: 1,
+            maxLen: 80,
+          },
+          vadOptions: {
+            threshold: 0.6,
+            minSpeechDurationMs: 200,
+            minSilenceDurationMs: 500,
+          },
+          autoSliceOnSpeechEnd: true,
+        },
+        {
+          onTranscribe: (event) => {
+            if (!this.isRunning) return;
+            const text = event.data?.result?.trim();
+            if (text) {
+              this.emitResult({ text, isFinal: !event.isCapturing });
+            }
+          },
+          onError: (error) => {
+            this.emitError(new Error(error));
+          },
+        },
+      );
+
+      await this.transcriber.start();
     } catch (err) {
       this.isRunning = false;
       this.emitError(err instanceof Error ? err : new Error(String(err)));
@@ -134,9 +122,10 @@ export class WhisperRecognizer implements ISpeechRecognizer {
   async stop(): Promise<void> {
     if (!this.isRunning) return;
     this.isRunning = false;
-    if (this.stopRealtime) {
-      await this.stopRealtime().catch(() => {});
-      this.stopRealtime = null;
+    if (this.transcriber) {
+      await this.transcriber.stop().catch(() => {});
+      await this.transcriber.release().catch(() => {});
+      this.transcriber = null;
     }
   }
 
@@ -156,8 +145,8 @@ export class WhisperRecognizer implements ISpeechRecognizer {
     const { initWhisper } = this.requireWhisper();
     this.whisperCtx = await initWhisper({
       filePath,
-      useGpu: true,       // Metal GPU on iOS — typically 3-5× faster than CPU
-      useFlashAttn: true, // Flash Attention when GPU is available
+      useGpu: true,
+      useFlashAttn: true,
     });
   }
 
@@ -198,16 +187,22 @@ export class WhisperRecognizer implements ISpeechRecognizer {
     } catch (error) {
       if (error instanceof Error) {
         const msg = error.message ?? '';
-        if (
-          msg.includes('getConstants') ||
-          msg.includes('NativeModule') ||
-          msg.includes('Cannot find module')
-        ) {
+        if (msg.includes('getConstants') || msg.includes('NativeModule') || msg.includes('Cannot find module')) {
           throw new Error(this.getWhisperUnavailableMessage());
         }
       }
       throw error;
     }
+  }
+
+  private requireRealtimeTranscriber(): RealtimeTranscriberModule {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('whisper.rn/src/realtime-transcription') as RealtimeTranscriberModule;
+  }
+
+  private requireAudioPcmStreamAdapter(): AudioPcmStreamAdapterModule {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('whisper.rn/src/realtime-transcription/adapters/AudioPcmStreamAdapter') as AudioPcmStreamAdapterModule;
   }
 
   private getWhisperUnavailableMessage(): string {

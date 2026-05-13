@@ -4,8 +4,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -15,7 +15,9 @@
     "test": "jest"
   },
   "dependencies": {
+    "@fugood/react-native-audio-pcm-stream": "^1.1.4",
     "@react-native-async-storage/async-storage": "^2.1.2",
+    "@react-native-voice/voice": "^3.2.4",
     "@tanstack/react-query": "^5.100.10",
     "expo": "^54.0.0",
     "expo-asset": "~12.0.13",
